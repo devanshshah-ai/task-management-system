@@ -348,6 +348,56 @@ const deleteTask = async (req, res) => {
   }
 };
 
+const getTaskStats = async (req, res) => {
+  try {
+    const now = new Date();
+
+    const [
+      totalTasks,
+      pendingTasks,
+      inProgressTasks,
+      completedTasks,
+      overdueTasks,
+    ] = await Promise.all([
+      Task.countDocuments(),
+
+      Task.countDocuments({
+        status: "pending",
+      }),
+
+      Task.countDocuments({
+        status: "in_progress",
+      }),
+
+      Task.countDocuments({
+        status: "completed",
+      }),
+
+      Task.countDocuments({
+        dueDate: { $lt: now },
+        status: { $ne: "completed" },
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalTasks,
+        pendingTasks,
+        inProgressTasks,
+        completedTasks,
+        overdueTasks,
+      },
+    });
+  } catch (error) {
+    console.error("Get task stats error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching task statistics",
+    });
+  }
+};
 
 module.exports = {
   createTask,
@@ -355,4 +405,5 @@ module.exports = {
   getTaskById,
   updateTask,
   deleteTask,
+  getTaskStats,
 };
