@@ -2,16 +2,20 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const User = require("../models/User");
-const { registerSchema,loginSchema} = require("../validators/authValidator");
+const AppError = require("../utils/AppError");
 
+const {
+  registerSchema,
+  loginSchema,
+} = require("../validators/authValidator");
+
+// REGISTER ADMIN
 const registerAdmin = async (req, res) => {
   try {
     const validationResult = registerSchema.safeParse(req.body);
 
     if (!validationResult.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
+      throw new AppError("Validation failed", 400, {
         errors: validationResult.error.issues.map((issue) => ({
           field: issue.path[0],
           message: issue.message,
@@ -24,10 +28,10 @@ const registerAdmin = async (req, res) => {
     const existingUser = await User.findOne({ email });
 
     if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message: "An account with this email already exists",
-      });
+      throw new AppError(
+        "An account with this email already exists",
+        409
+      );
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -53,106 +57,94 @@ const registerAdmin = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Registration error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Something went wrong while registering the admin",
-    });
+    throw error;
   }
 };
 
-const loginAdmin = async (req,res) => {
-    try {
-        const validationResult = loginSchema.safeParse(req.body);
-        if(!validationResult){
-            return res.status(400).json({
-                success: false,
-                message: "Validation failed",
-                errors: validationResult.error.issues.map((issue) => ({
-                    field: issue.path[0],
-                    message: issue.message,
-                })),
-            });
-        }
-        const {email,password} = validationResult.data;
-        const existingUser = await User.findOne({ email }).select("+password");
-        if(!existingUser){
-            return res.status(401).json({
-                success: false,
-                message: "Invalid email or password",
-            });
-        }
-        const isPasswordValid = await bcrypt.compare(password,existingUser.password);
-        if(!isPasswordValid){
-            return res.status(401).json({
-                success: false,
-                message: "Invalid email or password",
-            });
-        }
-        
-        const token = jwt.sign(
-            {
-                userId: existingUser._id,
-                role: existingUser.role,
-            },
-            process.env.JWT_SECRET,
-            {
-                expiresIn: "1d",
-            }
-        );
+// LOGIN ADMIN
+const loginAdmin = async (req, res) => {
+  try {
+    const validationResult = loginSchema.safeParse(req.body);
 
-        return res.status(200).json({
-            success: true,
-            message: "Login successful",
-            data: {
-                token,
-                user: {
-                    id: existingUser._id,
-                    name: existingUser.name,
-                    email: existingUser.email,
-                    role: existingUser.role,
-                },
-            },
-        });
-    } catch (error) {
-        console.log("Login Error",error);
-
-        return res.status(500).json({
-            success: false,
-            message: "Something went wrong while logging in",
-        });
+    if (!validationResult.success) {
+      throw new AppError("Validation failed", 400, {
+        errors: validationResult.error.issues.map((issue) => ({
+          field: issue.path[0],
+          message: issue.message,
+        })),
+      });
     }
+
+    const { email, password } = validationResult.data;
+
+    const existingUser = await User.findOne({ email }).select("+password");
+
+    if (!existingUser) {
+      throw new AppError("Invalid email or password", 401);
+    }
+
+    const isPasswordValid = await bcrypt.compare(
+      password,
+      existingUser.password
+    );
+
+    if (!isPasswordValid) {
+      throw new AppError("Invalid email or password", 401);
+    }
+
+    const token = jwt.sign(
+      {
+        userId: existingUser._id,
+        role: existingUser.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1d",
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        token,
+        user: {
+          id: existingUser._id,
+          name: existingUser.name,
+          email: existingUser.email,
+          role: existingUser.role,
+        },
+      },
+    });
+  } catch (error) {
+    throw error;
+  }
 };
 
-const getCurrentUser = async (req,res) => {
-    try {
-        const user = await User.findById(req.user.userId);
-        if(!user){
-            return res.status(404).json({
-                success: false,
-                message: "User not found",
-        });
-        }
-        return res.status(200).json({
-            success: true,
-            data: {
-                user: {
-                    id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                    createdAt: user.createdAt,
-                },
-            },
-        });
-    } catch (error) {
-        console.error("Get current user error:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Something went wrong",
-        });
+// GET CURRENT USER
+const getCurrentUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+
+    if (!user) {
+      throw new AppError("User not found", 404);
     }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          createdAt: user.createdAt,
+        },
+      },
+    });
+  } catch (error) {
+    throw error;
+  }
 };
 
 module.exports = {

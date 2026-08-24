@@ -2,12 +2,16 @@ const mongoose = require("mongoose");
 
 const Task = require("../models/Task");
 const User = require("../models/User");
+const AppError = require("../utils/AppError");
 
 const {
   createTaskSchema,
   updateTaskSchema,
 } = require("../validators/taskValidator");
 
+const {
+  taskQuerySchema,
+} = require("../validators/taskQueryValidator");
 
 // CREATE TASK
 const createTask = async (req, res) => {
@@ -15,9 +19,7 @@ const createTask = async (req, res) => {
     const validationResult = createTaskSchema.safeParse(req.body);
 
     if (!validationResult.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
+      throw new AppError("Validation failed", 400, {
         errors: validationResult.error.issues.map((issue) => ({
           field: issue.path[0],
           message: issue.message,
@@ -38,10 +40,15 @@ const createTask = async (req, res) => {
     const assignedUser = await User.findById(assignedTo);
 
     if (!assignedUser) {
-      return res.status(404).json({
-        success: false,
-        message: "Assigned user not found",
-      });
+      throw new AppError("Assigned user not found", 404);
+    }
+
+    // Tasks can only be assigned to normal users
+    if (assignedUser.role !== "user") {
+      throw new AppError(
+        "Tasks can only be assigned to users",
+        400
+      );
     }
 
     const task = await Task.create({
@@ -66,72 +73,92 @@ const createTask = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Create task error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Something went wrong while creating the task",
-    });
+    throw error;
   }
 };
-
 
 // GET ALL TASKS
 const getTasks = async (req, res) => {
   try {
+    // Validate query parameters
+    const validationResult = taskQuerySchema.safeParse(req.query);
+
+    if (!validationResult.success) {
+      throw new AppError("Invalid query parameters", 400, {
+        errors: validationResult.error.issues.map((issue) => ({
+          field: issue.path[0],
+          message: issue.message,
+        })),
+      });
+    }
+
     const {
-      page = 1,
-      limit = 10,
-      search = "",
+      page,
+      limit,
+      search,
       status,
       priority,
-      sortBy = "dueDate",
-      sortOrder = "asc",
-    } = req.query;
+      sortBy,
+      sortOrder,
+    } = validationResult.data;
 
-    const currentPage = Math.max(Number(page), 1);
-    const pageLimit = Math.min(Math.max(Number(limit), 1), 100);
+    const currentPage = page;
+    const pageLimit = limit;
+
     const skip = (currentPage - 1) * pageLimit;
 
     const query = {};
 
-    // Search by title
-    if (search.trim()) {
+    // =================================================
+    // USER TASK RESTRICTION
+    // =================================================
+    // Admin can see all tasks.
+    // Normal users can only see tasks assigned to them.
+
+    if (req.user.role === "user") {
+      query.assignedTo = req.user.userId;
+    }
+
+    // =================================================
+    // SEARCH
+    // =================================================
+
+    if (search) {
       query.title = {
-        $regex: search.trim(),
+        $regex: search,
         $options: "i",
       };
     }
 
-    // Filter by status
+    // =================================================
+    // FILTER BY STATUS
+    // =================================================
+
     if (status) {
       query.status = status;
     }
 
-    // Filter by priority
+    // =================================================
+    // FILTER BY PRIORITY
+    // =================================================
+
     if (priority) {
       query.priority = priority;
     }
 
-    // Sorting
-    const allowedSortFields = [
-      "dueDate",
-      "createdAt",
-      "updatedAt",
-      "title",
-      "priority",
-      "status",
-    ];
-
-    const selectedSortField = allowedSortFields.includes(sortBy)
-      ? sortBy
-      : "dueDate";
+    // =================================================
+    // SORT
+    // =================================================
 
     const selectedSortOrder = sortOrder === "desc" ? -1 : 1;
 
     const sort = {
-      [selectedSortField]: selectedSortOrder,
+      [sortBy]: selectedSortOrder,
     };
+
+    // =================================================
+    // FETCH TASKS
+    // =================================================
 
     const [tasks, totalTasks] = await Promise.all([
       Task.find(query)
@@ -161,26 +188,18 @@ const getTasks = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get tasks error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Something went wrong while fetching tasks",
-    });
+    throw error;
   }
 };
-
 
 // GET TASK BY ID
 const getTaskById = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Validate MongoDB ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid task ID",
-      });
+      throw new AppError("Invalid task ID", 400);
     }
 
     const task = await Task.findById(id)
@@ -188,10 +207,21 @@ const getTaskById = async (req, res) => {
       .populate("createdBy", "name email role");
 
     if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: "Task not found",
-      });
+      throw new AppError("Task not found", 404);
+    }
+
+    // =================================================
+    // USER TASK RESTRICTION
+    // =================================================
+    // Users cannot view another user's task.
+
+    if (
+      req.user.role === "user" &&
+      task.assignedTo._id.toString() !== req.user.userId.toString()
+    ) {
+      // Return 404 instead of 403 so we don't reveal
+      // that another user's task exists.
+      throw new AppError("Task not found", 404);
     }
 
     return res.status(200).json({
@@ -201,34 +231,25 @@ const getTaskById = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get task error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Something went wrong while fetching the task",
-    });
+    throw error;
   }
 };
-
 
 // UPDATE TASK
 const updateTask = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Validate MongoDB ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid task ID",
-      });
+      throw new AppError("Invalid task ID", 400);
     }
 
+    // Validate request body
     const validationResult = updateTaskSchema.safeParse(req.body);
 
     if (!validationResult.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
+      throw new AppError("Validation failed", 400, {
         errors: validationResult.error.issues.map((issue) => ({
           field: issue.path[0],
           message: issue.message,
@@ -239,34 +260,57 @@ const updateTask = async (req, res) => {
     const task = await Task.findById(id);
 
     if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: "Task not found",
-      });
+      throw new AppError("Task not found", 404);
     }
+
+    // =================================================
+    // AUTHORIZATION
+    // =================================================
 
     const isAdmin = req.user.role === "admin";
 
     const isTaskOwner =
       task.assignedTo.toString() === req.user.userId.toString();
 
+    // Admin can update any task.
+    // User can only update their assigned task.
     if (!isAdmin && !isTaskOwner) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not authorized to update this task",
-      });
+      throw new AppError(
+        "You are not authorized to update this task",
+        403
+      );
     }
 
     const updateData = validationResult.data;
 
+    // =================================================
+    // REASSIGN TASK
+    // =================================================
+
     if (updateData.assignedTo) {
-      const assignedUser = await User.findById(updateData.assignedTo);
+      // Verify assigned user exists
+      const assignedUser = await User.findById(
+        updateData.assignedTo
+      );
 
       if (!assignedUser) {
-        return res.status(404).json({
-          success: false,
-          message: "Assigned user not found",
-        });
+        throw new AppError("Assigned user not found", 404);
+      }
+
+      // Cannot assign tasks to admins
+      if (assignedUser.role !== "user") {
+        throw new AppError(
+          "Tasks can only be assigned to users",
+          400
+        );
+      }
+
+      // Only admins can reassign tasks
+      if (!isAdmin) {
+        throw new AppError(
+          "Only admins can reassign tasks",
+          403
+        );
       }
     }
 
@@ -289,47 +333,42 @@ const updateTask = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Update task error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Something went wrong while updating the task",
-    });
+    throw error;
   }
 };
-
 
 // DELETE TASK
 const deleteTask = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Validate MongoDB ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid task ID",
-      });
+      throw new AppError("Invalid task ID", 400);
     }
 
     const task = await Task.findById(id);
 
     if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: "Task not found",
-      });
+      throw new AppError("Task not found", 404);
     }
+
+    // =================================================
+    // AUTHORIZATION
+    // =================================================
 
     const isAdmin = req.user.role === "admin";
 
     const isTaskOwner =
       task.assignedTo.toString() === req.user.userId.toString();
 
+    // Admin can delete any task.
+    // User can delete only their assigned task.
     if (!isAdmin && !isTaskOwner) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not authorized to delete this task",
-      });
+      throw new AppError(
+        "You are not authorized to delete this task",
+        403
+      );
     }
 
     await Task.findByIdAndDelete(id);
@@ -339,15 +378,11 @@ const deleteTask = async (req, res) => {
       message: "Task deleted successfully",
     });
   } catch (error) {
-    console.error("Delete task error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Something went wrong while deleting the task",
-    });
+    throw error;
   }
 };
 
+// GET TASK STATISTICS
 const getTaskStats = async (req, res) => {
   try {
     const now = new Date();
@@ -390,12 +425,7 @@ const getTaskStats = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get task stats error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Something went wrong while fetching task statistics",
-    });
+    throw error;
   }
 };
 

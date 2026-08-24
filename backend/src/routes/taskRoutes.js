@@ -10,16 +10,52 @@ const {
 } = require("../controllers/taskController");
 
 const { protect } = require("../middleware/authMiddleware");
+const authorize = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
 router.use(protect);
 
-router.post("/", createTask);
-router.get("/", getTasks);
-router.get("/stats", getTaskStats);
-router.get("/:id", getTaskById);
-router.put("/:id", updateTask);
-router.delete("/:id", deleteTask);
+// Admin only
+router.post(
+  "/",
+  authorize("admin"),
+  createTask
+);
+
+// Admin + User
+router.get(
+  "/",
+  authorize("admin", "user"),
+  getTasks
+);
+
+// Admin only
+router.get(
+  "/stats",
+  authorize("admin"),
+  getTaskStats
+);
+
+// Admin + User
+router.get(
+  "/:id",
+  authorize("admin", "user"),
+  getTaskById
+);
+
+// Admin + User
+router.put(
+  "/:id",
+  authorize("admin", "user"),
+  updateTask
+);
+
+// Admin + User
+router.delete(
+  "/:id",
+  authorize("admin", "user"),
+  deleteTask
+);
 
 module.exports = router;
