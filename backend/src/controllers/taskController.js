@@ -387,6 +387,13 @@ const getTaskStats = async (req, res) => {
   try {
     const now = new Date();
 
+    const baseQuery =
+      req.user.role === "admin"
+        ? {}
+        : {
+            assignedTo: req.user.userId,
+          };
+
     const [
       totalTasks,
       pendingTasks,
@@ -394,21 +401,25 @@ const getTaskStats = async (req, res) => {
       completedTasks,
       overdueTasks,
     ] = await Promise.all([
-      Task.countDocuments(),
+      Task.countDocuments(baseQuery),
 
       Task.countDocuments({
+        ...baseQuery,
         status: "pending",
       }),
 
       Task.countDocuments({
+        ...baseQuery,
         status: "in_progress",
       }),
 
       Task.countDocuments({
+        ...baseQuery,
         status: "completed",
       }),
 
       Task.countDocuments({
+        ...baseQuery,
         dueDate: { $lt: now },
         status: { $ne: "completed" },
       }),

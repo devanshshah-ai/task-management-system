@@ -1,46 +1,101 @@
+/* --------------------------------
+   Sidebar
+-------------------------------- */
+
 .sidebar {
+  position: fixed;
+
+  top: 0;
+  left: 0;
+  bottom: 0;
+
   width: 240px;
-  min-height: 100vh;
-  background: #111827;
-  color: #ffffff;
+  min-width: 240px;
+  height: 100vh;
+
   display: flex;
   flex-direction: column;
-  position: fixed;
-  left: 0;
-  top: 0;
-  bottom: 0;
+
+  background: #111827;
+  color: #ffffff;
+
+  border-right: 1px solid #1f2937;
+
+  z-index: 1000;
+
+  overflow-y: auto;
 }
+
+
+/* --------------------------------
+   Logo
+-------------------------------- */
 
 .sidebar-logo {
   padding: 24px 20px;
+
   border-bottom: 1px solid #374151;
 }
 
 .sidebar-logo h2 {
   margin: 0;
+
+  color: #ffffff;
+
   font-size: 22px;
+  line-height: 1.2;
+  font-weight: 700;
 }
 
 .sidebar-logo span {
   display: block;
-  margin-top: 4px;
-  font-size: 12px;
+
+  margin-top: 5px;
+
   color: #9ca3af;
+
+  font-size: 12px;
+  line-height: 1.4;
 }
+
+
+/* --------------------------------
+   Navigation
+-------------------------------- */
 
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  padding: 20px 12px;
+
   gap: 6px;
+
+  padding: 20px 12px;
 }
 
+
+/* --------------------------------
+   Navigation Link
+-------------------------------- */
+
 .sidebar-link {
+  display: block;
+
+  width: 100%;
+
   padding: 12px 14px;
+
   border-radius: 8px;
+
   color: #d1d5db;
+
+  font-size: 15px;
+  font-weight: 500;
+
   text-decoration: none;
-  transition: background 0.2s ease;
+
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .sidebar-link:hover {
@@ -53,19 +108,43 @@
   color: #ffffff;
 }
 
+
+/* --------------------------------
+   User Section
+-------------------------------- */
+
 .sidebar-user {
   margin-top: auto;
+
   padding: 18px 20px;
+
   border-top: 1px solid #374151;
 }
 
 .sidebar-user-name {
+  color: #ffffff;
+
+  font-size: 14px;
   font-weight: 600;
 }
 
 .sidebar-user-role {
   margin-top: 4px;
-  font-size: 13px;
+
   color: #9ca3af;
+
+  font-size: 13px;
+
   text-transform: capitalize;
+}
+
+
+/* --------------------------------
+   Mobile
+-------------------------------- */
+
+@media (max-width: 700px) {
+  .sidebar {
+    display: none;
+  }
 }

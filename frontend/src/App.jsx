@@ -4,16 +4,22 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 
+import DashboardLayout from "./layouts/DashboardLayout";
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public Routes */}
         <Route path="/login" element={<Login />} />
-
         <Route path="/register" element={<Register />} />
 
-        <Route path="/dashboard" element={<Dashboard />} />
+        {/* Dashboard Layout */}
+        <Route element={<DashboardLayout />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+        </Route>
 
+        {/* Fallback */}
         <Route path="*" element={<Login />} />
       </Routes>
     </BrowserRouter>

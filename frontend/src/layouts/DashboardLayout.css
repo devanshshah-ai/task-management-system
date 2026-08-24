@@ -1,0 +1,53 @@
+.dashboard-layout {
+  width: 100%;
+  min-height: 100vh;
+
+  background: var(--color-background);
+}
+
+
+/* Main application area */
+
+.dashboard-main {
+  width: calc(100% - 240px);
+  min-height: 100vh;
+
+  margin-left: 240px;
+
+  display: flex;
+  flex-direction: column;
+
+  background: var(--color-background);
+}
+
+
+/* Page content below header */
+
+.dashboard-main-content {
+  flex: 1;
+
+  width: 100%;
+  min-width: 0;
+
+  background: var(--color-background);
+}
+
+
+/* Tablet */
+
+@media (max-width: 900px) {
+  .dashboard-main {
+    width: calc(100% - 220px);
+    margin-left: 220px;
+  }
+}
+
+
+/* Mobile */
+
+@media (max-width: 700px) {
+  .dashboard-main {
+    width: 100%;
+    margin-left: 0;
+  }
+}
