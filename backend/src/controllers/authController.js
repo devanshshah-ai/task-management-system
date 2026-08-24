@@ -9,8 +9,8 @@ const {
   loginSchema,
 } = require("../validators/authValidator");
 
-// REGISTER ADMIN
-const registerAdmin = async (req, res) => {
+// REGISTER USER
+const registerUser = async (req, res) => {
   try {
     const validationResult = registerSchema.safeParse(req.body);
 
@@ -40,13 +40,26 @@ const registerAdmin = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role: "admin",
+      role: "user",
     });
+
+    // Generate token immediately after registration
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1d",
+      }
+    );
 
     return res.status(201).json({
       success: true,
-      message: "Admin registered successfully",
+      message: "Account created successfully",
       data: {
+        token,
         user: {
           id: user._id,
           name: user.name,
@@ -61,8 +74,8 @@ const registerAdmin = async (req, res) => {
   }
 };
 
-// LOGIN ADMIN
-const loginAdmin = async (req, res) => {
+// LOGIN USER / ADMIN
+const login = async (req, res) => {
   try {
     const validationResult = loginSchema.safeParse(req.body);
 
@@ -77,7 +90,9 @@ const loginAdmin = async (req, res) => {
 
     const { email, password } = validationResult.data;
 
-    const existingUser = await User.findOne({ email }).select("+password");
+    const existingUser = await User.findOne({ email }).select(
+      "+password"
+    );
 
     if (!existingUser) {
       throw new AppError("Invalid email or password", 401);
@@ -148,7 +163,7 @@ const getCurrentUser = async (req, res) => {
 };
 
 module.exports = {
-  registerAdmin,
-  loginAdmin,
+  registerUser,
+  login,
   getCurrentUser,
 };

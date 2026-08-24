@@ -1,0 +1,52 @@
+.dashboard-layout {
+  min-height: 100vh;
+}
+
+.dashboard-main {
+  margin-left: 240px;
+  min-height: 100vh;
+  background: #f5f7fb;
+}
+
+.dashboard-content {
+  padding: 28px;
+}
+
+.dashboard-welcome {
+  margin-bottom: 24px;
+}
+
+.dashboard-welcome h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.dashboard-welcome p {
+  margin: 6px 0 0;
+  color: #6b7280;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+}
+
+.stat-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
+}
+
+.stat-card span {
+  display: block;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.stat-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 28px;
+}
