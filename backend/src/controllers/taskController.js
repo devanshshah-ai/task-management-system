@@ -78,117 +78,180 @@ const createTask = async (req, res) => {
 };
 
 // GET ALL TASKS
-const getTasks = async (req, res) => {
+const getTasks = async (req, res, next) => {
   try {
-    // Validate query parameters
-    const validationResult = taskQuerySchema.safeParse(req.query);
-
-    if (!validationResult.success) {
-      throw new AppError("Invalid query parameters", 400, {
-        errors: validationResult.error.issues.map((issue) => ({
-          field: issue.path[0],
-          message: issue.message,
-        })),
-      });
-    }
-
     const {
-      page,
-      limit,
-      search,
+      page = 1,
+      limit = 10,
+      search = "",
       status,
       priority,
-      sortBy,
-      sortOrder,
-    } = validationResult.data;
+    } = req.query;
 
-    const currentPage = page;
-    const pageLimit = limit;
-
+    const currentPage = Math.max(Number(page), 1);
+    const pageLimit = Math.max(Number(limit), 1);
     const skip = (currentPage - 1) * pageLimit;
 
-    const query = {};
+    /* =========================================
+       Build Match Query
+    ========================================= */
 
-    // =================================================
-    // USER TASK RESTRICTION
-    // =================================================
-    // Admin can see all tasks.
-    // Normal users can only see tasks assigned to them.
+    const matchQuery = {};
 
-    if (req.user.role === "user") {
-      query.assignedTo = req.user.userId;
-    }
-
-    // =================================================
-    // SEARCH
-    // =================================================
-
-    if (search) {
-      query.title = {
-        $regex: search,
+    // Search by title
+    if (search.trim()) {
+      matchQuery.title = {
+        $regex: search.trim(),
         $options: "i",
       };
     }
 
-    // =================================================
-    // FILTER BY STATUS
-    // =================================================
-
+    // Filter by status
     if (status) {
-      query.status = status;
+      matchQuery.status = status;
     }
 
-    // =================================================
-    // FILTER BY PRIORITY
-    // =================================================
-
+    // Filter by priority
     if (priority) {
-      query.priority = priority;
+      matchQuery.priority = priority;
     }
 
-    // =================================================
-    // SORT
-    // =================================================
+    /* =========================================
+       Get Total Tasks
+    ========================================= */
 
-    const selectedSortOrder = sortOrder === "desc" ? -1 : 1;
+    const totalTasks = await Task.countDocuments(matchQuery);
 
-    const sort = {
-      [sortBy]: selectedSortOrder,
-    };
+    /* =========================================
+       Task Ordering
 
-    // =================================================
-    // FETCH TASKS
-    // =================================================
+       Active tasks first
+       ↓
+       Pending / In Progress
+       ↓
+       Sorted by due date
 
-    const [tasks, totalTasks] = await Promise.all([
-      Task.find(query)
-        .populate("assignedTo", "name email role")
-        .populate("createdBy", "name email role")
-        .sort(sort)
-        .skip(skip)
-        .limit(pageLimit),
+       Completed tasks last
+       ↓
+       Sorted by due date
+    ========================================= */
 
-      Task.countDocuments(query),
+    const tasks = await Task.aggregate([
+      {
+        $match: matchQuery,
+      },
+
+      {
+        $addFields: {
+          statusOrder: {
+            $cond: [
+              { $eq: ["$status", "completed"] },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+
+      {
+        $sort: {
+          statusOrder: 1,
+          dueDate: 1,
+          createdAt: -1,
+        },
+      },
+
+      {
+        $skip: skip,
+      },
+
+      {
+        $limit: pageLimit,
+      },
+
+      /* =========================================
+         Populate assignedTo
+      ========================================= */
+
+      {
+        $lookup: {
+          from: "users",
+          localField: "assignedTo",
+          foreignField: "_id",
+          as: "assignedTo",
+        },
+      },
+
+      {
+        $unwind: {
+          path: "$assignedTo",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      /* =========================================
+         Populate createdBy
+      ========================================= */
+
+      {
+        $lookup: {
+          from: "users",
+          localField: "createdBy",
+          foreignField: "_id",
+          as: "createdBy",
+        },
+      },
+
+      {
+        $unwind: {
+          path: "$createdBy",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      /* =========================================
+         Remove Internal statusOrder
+      ========================================= */
+
+      {
+        $project: {
+          statusOrder: 0,
+
+          "assignedTo.password": 0,
+          "createdBy.password": 0,
+        },
+      },
     ]);
 
-    const totalPages = Math.ceil(totalTasks / pageLimit);
+    /* =========================================
+       Pagination
+    ========================================= */
 
-    return res.status(200).json({
+    const totalPages = Math.ceil(
+      totalTasks / pageLimit
+    );
+
+    res.status(200).json({
       success: true,
       data: {
         tasks,
+
         pagination: {
           currentPage,
           totalPages,
           totalTasks,
           limit: pageLimit,
-          hasNextPage: currentPage < totalPages,
-          hasPreviousPage: currentPage > 1,
+
+          hasNextPage:
+            currentPage < totalPages,
+
+          hasPreviousPage:
+            currentPage > 1,
         },
       },
     });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
