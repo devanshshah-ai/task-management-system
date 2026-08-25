@@ -10,3 +10,23 @@ export const getTasks = (params = {}) => {
     query ? `/tasks?${query}` : "/tasks"
   );
 };
+
+export const getTaskById = (id) =>
+  apiClient(`/tasks/${id}`);
+
+export const createTask = (taskData) =>
+  apiClient("/tasks", {
+    method: "POST",
+    body: JSON.stringify(taskData),
+  });
+
+export const updateTask = (id, taskData) =>
+  apiClient(`/tasks/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(taskData),
+  });
+
+export const deleteTask = (id) =>
+  apiClient(`/tasks/${id}`, {
+    method: "DELETE",
+  });

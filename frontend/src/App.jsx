@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
+import Tasks from "./pages/Tasks";
 
 import DashboardLayout from "./layouts/DashboardLayout";
 
@@ -14,9 +15,10 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Dashboard Layout */}
+        {/* Protected Application Layout */}
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/tasks" element={<Tasks />} />
         </Route>
 
         {/* Fallback */}
