@@ -1,499 +1,136 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+
 import { useAuth } from "../context/AuthContext";
-
-import { getTasks } from "../api/taskApi";
-import { getUsers } from "../api/userApi";
-import apiClient from "../api/apiClient";
-
-import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { getTasks, updateTask, deleteTask } from "../api/taskApi";
+import { fetchTasks, updateTaskInStore } from "../store/taskSlice";
 
 import "./Tasks.css";
 
-/* =========================================================
-   CONSTANTS
-========================================================= */
-
-const PAGE_LIMIT = 10;
-const SEARCH_DELAY = 500;
-
 const STATUS_OPTIONS = [
-  {
-    value: "all",
-    label: "All Status",
-  },
-  {
-    value: "pending",
-    label: "Pending",
-  },
-  {
-    value: "in_progress",
-    label: "In Progress",
-  },
-  {
-    value: "completed",
-    label: "Completed",
-  },
+  { value: "all", label: "All Status" },
+  { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "completed", label: "Completed" },
 ];
 
 const PRIORITY_OPTIONS = [
-  {
-    value: "all",
-    label: "All Priorities",
-  },
-  {
-    value: "high",
-    label: "High",
-  },
-  {
-    value: "medium",
-    label: "Medium",
-  },
-  {
-    value: "low",
-    label: "Low",
-  },
+  { value: "all", label: "All Priority" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
 ];
 
 const SORT_OPTIONS = [
-  {
-    value: "asc",
-    label: "Earliest First",
-  },
-  {
-    value: "desc",
-    label: "Latest First",
-  },
+  { value: "asc", label: "Earliest First" },
+  { value: "desc", label: "Latest First" },
 ];
 
-const DEFAULT_FILTERS = {
-  search: "",
-  status: "all",
-  priority: "all",
-  sortOrder: "asc",
-};
-
-const DEFAULT_EDIT_FORM = {
+const initialEditForm = {
   title: "",
   description: "",
   priority: "medium",
   status: "pending",
   dueDate: "",
-  assignedTo: "",
 };
 
-/* =========================================================
-   COMPONENT
-========================================================= */
-
-const Task = () => {
+const Tasks = () => {
+  const dispatch = useDispatch();
   const { user } = useAuth();
-  const navigate = useNavigate();
 
-  /* =======================================================
-     STATE
-  ======================================================= */
-
-  const [tasks, setTasks] = useState([]);
-  const [users, setUsers] = useState([]);
-
-  const [pagination, setPagination] = useState({
-    currentPage: 1,
-    totalPages: 1,
-    totalTasks: 0,
-    limit: PAGE_LIMIT,
-    hasNextPage: false,
-    hasPreviousPage: false,
-  });
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  /* =======================================================
-     FILTER STATE
-  ======================================================= */
+  const {
+    tasks = [],
+    pagination = {
+      currentPage: 1,
+      totalPages: 1,
+      totalTasks: 0,
+      limit: 10,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    },
+    loading = false,
+    error = "",
+  } = useSelector((state) => state.tasks || {});
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("asc");
 
-  const [appliedFilters, setAppliedFilters] = useState(
-    DEFAULT_FILTERS
-  );
+  const [appliedFilters, setAppliedFilters] = useState({
+    search: "",
+    status: "all",
+    priority: "all",
+    sortOrder: "asc",
+  });
 
   const searchThrottleRef = useRef(null);
 
-  /* =======================================================
-     VIEW MODAL
-  ======================================================= */
+  // =========================
+  // View Modal
+  // =========================
 
   const [selectedTask, setSelectedTask] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
 
-  /* =======================================================
-     EDIT MODAL
-  ======================================================= */
+  // =========================
+  // Edit Modal
+  // =========================
 
   const [editingTask, setEditingTask] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [updating, setUpdating] = useState(false);
 
-  const [editForm, setEditForm] = useState({
-    ...DEFAULT_EDIT_FORM,
-  });
+  const [editForm, setEditForm] = useState(initialEditForm);
 
-  /* =======================================================
-     DELETE
-  ======================================================= */
+  // =========================
+  // Delete
+  // =========================
 
   const [deletingId, setDeletingId] = useState(null);
-
-  /* =======================================================
-     PERMISSIONS
-  ======================================================= */
+  const [localError, setLocalError] = useState("");
 
   const isAdmin = user?.role === "admin";
 
-  const getUserId = useCallback(() => {
+  // =========================
+  // Permissions
+  // =========================
+
+  const getUserId = () => {
     return user?._id || user?.id;
-  }, [user]);
+  };
 
-  const canManageTask = useCallback(
-    (task) => {
-      if (!task) {
-        return false;
-      }
+  const canManageTask = (task) => {
+    if (isAdmin) {
+      return true;
+    }
 
-      if (isAdmin) {
-        return true;
-      }
+    const currentUserId = getUserId();
 
-      const currentUserId = getUserId();
+    const assignedUserId =
+      task?.assignedTo?._id ||
+      task?.assignedTo?.id ||
+      task?.assignedTo;
 
-      const assignedUserId =
-        task?.assignedTo?._id ||
-        task?.assignedTo?.id ||
-        task?.assignedTo;
-
-      return (
-        currentUserId &&
-        assignedUserId &&
-        String(currentUserId) === String(assignedUserId)
-      );
-    },
-    [getUserId, isAdmin]
-  );
-
-  /* =======================================================
-     ERROR HELPER
-  ======================================================= */
-
-  const getErrorMessage = (err, fallback) => {
     return (
-      err?.response?.data?.message ||
-      err?.message ||
-      fallback
+      currentUserId &&
+      assignedUserId &&
+      String(currentUserId) === String(assignedUserId)
     );
   };
 
-  /* =======================================================
-     LOAD USERS
-  ======================================================= */
+  // =========================
+  // Date Helpers
+  // =========================
 
-  const loadUsers = useCallback(async () => {
-    try {
-      const response = await getUsers();
-
-      const data = response?.data || response;
-
-      const receivedUsers = data?.users || [];
-
-      setUsers(receivedUsers);
-
-      console.log("USERS LOADED:", receivedUsers);
-    } catch (err) {
-      console.error("Unable to load users:", err);
-    }
-  }, []);
-
-  /* =======================================================
-     BUILD TASK QUERY
-  ======================================================= */
-
-  const buildTaskParams = useCallback(
-    (page = 1, filters = appliedFilters) => {
-      const params = {
-        page,
-        limit: PAGE_LIMIT,
-        search: filters.search.trim(),
-        sortBy: "dueDate",
-        sortOrder: filters.sortOrder,
-      };
-
-      if (filters.status !== "all") {
-        params.status = filters.status;
-      }
-
-      if (filters.priority !== "all") {
-        params.priority = filters.priority;
-      }
-
-      return params;
-    },
-    [appliedFilters]
-  );
-
-  /* =======================================================
-     LOAD TASKS
-  ======================================================= */
-
-  const loadTasks = useCallback(
-    async (page = 1, filters = appliedFilters) => {
-      try {
-        setLoading(true);
-        setError("");
-
-        const params = buildTaskParams(page, filters);
-
-        const response = await getTasks(params);
-
-        const data = response?.data || response;
-
-        const receivedTasks = data?.tasks || [];
-
-        setTasks(receivedTasks);
-
-        setPagination(
-          data?.pagination || {
-            currentPage: page,
-            totalPages: 1,
-            totalTasks: receivedTasks.length,
-            limit: PAGE_LIMIT,
-            hasNextPage: false,
-            hasPreviousPage: false,
-          }
-        );
-      } catch (err) {
-        console.error("Task loading error:", err);
-
-        setError(
-          getErrorMessage(
-            err,
-            "Unable to load tasks."
-          )
-        );
-
-        setTasks([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [appliedFilters, buildTaskParams]
-  );
-
-  /* =======================================================
-     INITIAL LOAD
-  ======================================================= */
-
-  useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
-
-  /* =======================================================
-     LOAD TASKS WHEN FILTERS CHANGE
-  ======================================================= */
-
-  useEffect(() => {
-    loadTasks(1, appliedFilters);
-  }, [appliedFilters, loadTasks]);
-
-  /* =======================================================
-     CLEANUP SEARCH TIMER
-  ======================================================= */
-
-  useEffect(() => {
-    return () => {
-      if (searchThrottleRef.current) {
-        clearTimeout(searchThrottleRef.current);
-      }
-    };
-  }, []);
-
-  /* =======================================================
-     APPLY FILTERS
-  ======================================================= */
-
-  const handleApplyFilters = () => {
-    setAppliedFilters({
-      search: search.trim(),
-      status: statusFilter,
-      priority: priorityFilter,
-      sortOrder,
-    });
-  };
-
-  /* =======================================================
-     STATUS FILTER
-  ======================================================= */
-
-  const handleStatusChange = (event) => {
-    const value = event.target.value;
-
-    setStatusFilter(value);
-
-    setAppliedFilters((previous) => ({
-      ...previous,
-      status: value,
-    }));
-  };
-
-  /* =======================================================
-     PRIORITY FILTER
-  ======================================================= */
-
-  const handlePriorityChange = (event) => {
-    const value = event.target.value;
-
-    setPriorityFilter(value);
-
-    setAppliedFilters((previous) => ({
-      ...previous,
-      priority: value,
-    }));
-  };
-
-  /* =======================================================
-     SORT FILTER
-  ======================================================= */
-
-  const handleSortChange = (event) => {
-    const value = event.target.value;
-
-    setSortOrder(value);
-
-    setAppliedFilters((previous) => ({
-      ...previous,
-      sortOrder: value,
-    }));
-  };
-
-  /* =======================================================
-     SEARCH
-  ======================================================= */
-
-  const handleSearchChange = (event) => {
-    const value = event.target.value;
-
-    setSearch(value);
-
-    if (searchThrottleRef.current) {
-      clearTimeout(searchThrottleRef.current);
-    }
-
-    searchThrottleRef.current = setTimeout(() => {
-      setAppliedFilters((previous) => ({
-        ...previous,
-        search: value.trim(),
-      }));
-    }, SEARCH_DELAY);
-  };
-
-  /* =======================================================
-     SEARCH ENTER
-  ======================================================= */
-
-  const handleSearchKeyDown = (event) => {
-    if (event.key !== "Enter") {
-      return;
-    }
-
-    if (searchThrottleRef.current) {
-      clearTimeout(searchThrottleRef.current);
-    }
-
-    setAppliedFilters((previous) => ({
-      ...previous,
-      search: search.trim(),
-    }));
-  };
-
-  /* =======================================================
-     CLEAR SEARCH
-  ======================================================= */
-
-  const handleClearSearch = () => {
-    if (searchThrottleRef.current) {
-      clearTimeout(searchThrottleRef.current);
-    }
-
-    setSearch("");
-
-    setAppliedFilters((previous) => ({
-      ...previous,
-      search: "",
-    }));
-  };
-
-  /* =======================================================
-     CLEAR ALL FILTERS
-  ======================================================= */
-
-  const handleClearFilters = () => {
-    if (searchThrottleRef.current) {
-      clearTimeout(searchThrottleRef.current);
-    }
-
-    setSearch("");
-    setStatusFilter("all");
-    setPriorityFilter("all");
-    setSortOrder("asc");
-
-    setAppliedFilters({
-      ...DEFAULT_FILTERS,
-    });
-  };
-
-  /* =======================================================
-     PAGINATION
-  ======================================================= */
-
-  const handlePageChange = (page) => {
-    if (
-      page < 1 ||
-      page > pagination.totalPages ||
-      page === pagination.currentPage
-    ) {
-      return;
-    }
-
-    loadTasks(page, appliedFilters);
-  };
-
-  /* =======================================================
-     DATE HELPERS
-  ======================================================= */
-
-  const parseDate = (date) => {
+  const formatDate = (date) => {
     if (!date) {
-      return null;
+      return "—";
     }
 
     const parsedDate = new Date(date);
 
     if (Number.isNaN(parsedDate.getTime())) {
-      return null;
-    }
-
-    return parsedDate;
-  };
-
-  const formatDate = (date) => {
-    const parsedDate = parseDate(date);
-
-    if (!parsedDate) {
       return "—";
     }
 
@@ -505,9 +142,13 @@ const Task = () => {
   };
 
   const formatDateTime = (date) => {
-    const parsedDate = parseDate(date);
+    if (!date) {
+      return "—";
+    }
 
-    if (!parsedDate) {
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) {
       return "—";
     }
 
@@ -520,10 +161,6 @@ const Task = () => {
     });
   };
 
-  /* =======================================================
-     DATETIME LOCAL CONVERSION
-  ======================================================= */
-
   const convertToDateTimeLocal = (date) => {
     if (!date) {
       return "";
@@ -532,43 +169,53 @@ const Task = () => {
     const parsedDate = new Date(date);
 
     if (Number.isNaN(parsedDate.getTime())) {
-      console.log(
-        "Invalid due date received:",
-        date
-      );
-
       return "";
     }
 
-    const year = parsedDate.getFullYear();
+    const offset = parsedDate.getTimezoneOffset();
 
-    const month = String(
-      parsedDate.getMonth() + 1
-    ).padStart(2, "0");
+    const localDate = new Date(
+      parsedDate.getTime() - offset * 60 * 1000
+    );
 
-    const day = String(
-      parsedDate.getDate()
-    ).padStart(2, "0");
-
-    const hours = String(
-      parsedDate.getHours()
-    ).padStart(2, "0");
-
-    const minutes = String(
-      parsedDate.getMinutes()
-    ).padStart(2, "0");
-
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+    return localDate.toISOString().slice(0, 16);
   };
 
-  /* =======================================================
-     OVERDUE
-  ======================================================= */
+  // =========================
+  // Formatting
+  // =========================
+
+  const formatStatus = (status) => {
+    if (!status) {
+      return "Unknown";
+    }
+
+    if (status === "overdue") {
+      return "Overdue";
+    }
+
+    return status
+      .replace("_", " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const formatPriority = (priority) => {
+    if (!priority) {
+      return "Medium";
+    }
+
+    return (
+      priority.charAt(0).toUpperCase() +
+      priority.slice(1)
+    );
+  };
+
+  // =========================
+  // Overdue
+  // =========================
 
   const isTaskOverdue = (task) => {
-    const dueDate = parseDate(task?.dueDate);
-
-    if (!dueDate) {
+    if (!task?.dueDate) {
       return false;
     }
 
@@ -576,7 +223,7 @@ const Task = () => {
       return false;
     }
 
-    return dueDate.getTime() < Date.now();
+    return new Date(task.dueDate).getTime() < Date.now();
   };
 
   const getDisplayStatus = (task) => {
@@ -584,15 +231,274 @@ const Task = () => {
       return "overdue";
     }
 
-    return task?.status || "pending";
+    return task.status || "pending";
   };
 
-  /* =======================================================
-     TASK SORTING
-  ======================================================= */
+  // =========================
+  // Fetch Tasks
+  // =========================
+
+  const loadTasks = async ({
+    page = 1,
+    filters = appliedFilters,
+  } = {}) => {
+    const params = {
+      page,
+      limit: 10,
+      search: filters.search.trim(),
+      sortBy: "dueDate",
+      sortOrder: filters.sortOrder,
+    };
+
+    if (filters.status !== "all") {
+      params.status = filters.status;
+    }
+
+    if (filters.priority !== "all") {
+      params.priority = filters.priority;
+    }
+
+    dispatch(fetchTasks(params));
+  };
+
+  // =========================
+  // Initial Load
+  // =========================
+
+  useEffect(() => {
+    loadTasks({
+      page: 1,
+      filters: {
+        search: "",
+        status: "all",
+        priority: "all",
+        sortOrder: "asc",
+      },
+    });
+
+    return () => {
+      if (searchThrottleRef.current) {
+        clearTimeout(searchThrottleRef.current);
+      }
+    };
+  }, []);
+
+  // =========================
+  // Search
+  // =========================
+
+  const handleSearchChange = (event) => {
+    const value = event.target.value;
+
+    setSearch(value);
+
+    if (searchThrottleRef.current) {
+      clearTimeout(searchThrottleRef.current);
+    }
+
+    searchThrottleRef.current = setTimeout(() => {
+      const newFilters = {
+        search: value.trim(),
+        status: statusFilter,
+        priority: priorityFilter,
+        sortOrder,
+      };
+
+      setAppliedFilters(newFilters);
+
+      loadTasks({
+        page: 1,
+        filters: newFilters,
+      });
+    }, 500);
+  };
+
+  const handleSearchKeyDown = (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (searchThrottleRef.current) {
+      clearTimeout(searchThrottleRef.current);
+    }
+
+    handleApplyFilters();
+  };
+
+  // =========================
+  // Apply Filters
+  // =========================
+
+  const handleApplyFilters = () => {
+    if (searchThrottleRef.current) {
+      clearTimeout(searchThrottleRef.current);
+    }
+
+    const newFilters = {
+      search: search.trim(),
+      status: statusFilter,
+      priority: priorityFilter,
+      sortOrder,
+    };
+
+    setAppliedFilters(newFilters);
+
+    loadTasks({
+      page: 1,
+      filters: newFilters,
+    });
+  };
+
+  // =========================
+  // Status
+  // =========================
+
+  const handleStatusChange = (event) => {
+    const value = event.target.value;
+
+    setStatusFilter(value);
+
+    const newFilters = {
+      search: search.trim(),
+      status: value,
+      priority: priorityFilter,
+      sortOrder,
+    };
+
+    setAppliedFilters(newFilters);
+
+    loadTasks({
+      page: 1,
+      filters: newFilters,
+    });
+  };
+
+  // =========================
+  // Priority
+  // =========================
+
+  const handlePriorityChange = (event) => {
+    const value = event.target.value;
+
+    setPriorityFilter(value);
+
+    const newFilters = {
+      search: search.trim(),
+      status: statusFilter,
+      priority: value,
+      sortOrder,
+    };
+
+    setAppliedFilters(newFilters);
+
+    loadTasks({
+      page: 1,
+      filters: newFilters,
+    });
+  };
+
+  // =========================
+  // Sort
+  // =========================
+
+  const handleSortChange = (event) => {
+    const value = event.target.value;
+
+    setSortOrder(value);
+
+    const newFilters = {
+      search: search.trim(),
+      status: statusFilter,
+      priority: priorityFilter,
+      sortOrder: value,
+    };
+
+    setAppliedFilters(newFilters);
+
+    loadTasks({
+      page: 1,
+      filters: newFilters,
+    });
+  };
+
+  // =========================
+  // Clear Filters
+  // =========================
+
+  const handleClearFilters = () => {
+    if (searchThrottleRef.current) {
+      clearTimeout(searchThrottleRef.current);
+    }
+
+    const clearedFilters = {
+      search: "",
+      status: "all",
+      priority: "all",
+      sortOrder: "asc",
+    };
+
+    setSearch("");
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setSortOrder("asc");
+    setAppliedFilters(clearedFilters);
+
+    loadTasks({
+      page: 1,
+      filters: clearedFilters,
+    });
+  };
+
+  // =========================
+  // Clear Search
+  // =========================
+
+  const handleClearSearch = () => {
+    const newFilters = {
+      search: "",
+      status: statusFilter,
+      priority: priorityFilter,
+      sortOrder,
+    };
+
+    setSearch("");
+    setAppliedFilters(newFilters);
+
+    loadTasks({
+      page: 1,
+      filters: newFilters,
+    });
+  };
+
+  // =========================
+  // Pagination
+  // =========================
+
+  const handlePageChange = (page) => {
+    if (
+      page < 1 ||
+      page > pagination.totalPages ||
+      page === pagination.currentPage
+    ) {
+      return;
+    }
+
+    loadTasks({
+      page,
+      filters: appliedFilters,
+    });
+  };
+
+  // =========================
+  // Local Sorting
+  // =========================
 
   const getTaskSortWeight = (task) => {
-    switch (getDisplayStatus(task)) {
+    const status = getDisplayStatus(task);
+
+    switch (status) {
       case "overdue":
         return 1;
 
@@ -610,70 +516,23 @@ const Task = () => {
     }
   };
 
-  const sortedTasks = [...tasks].sort(
-    (a, b) => {
-      const statusWeightA =
-        getTaskSortWeight(a);
+  const sortedTasks = [...tasks].sort((a, b) => {
+    const statusWeightA = getTaskSortWeight(a);
+    const statusWeightB = getTaskSortWeight(b);
 
-      const statusWeightB =
-        getTaskSortWeight(b);
-
-      if (
-        statusWeightA !==
-        statusWeightB
-      ) {
-        return (
-          statusWeightA -
-          statusWeightB
-        );
-      }
-
-      const dateA =
-        parseDate(a.dueDate)?.getTime() ||
-        Number.MAX_SAFE_INTEGER;
-
-      const dateB =
-        parseDate(b.dueDate)?.getTime() ||
-        Number.MAX_SAFE_INTEGER;
-
-      return dateA - dateB;
-    }
-  );
-
-  /* =======================================================
-     FORMATTING
-  ======================================================= */
-
-  const formatStatus = (status) => {
-    if (!status) {
-      return "Unknown";
+    if (statusWeightA !== statusWeightB) {
+      return statusWeightA - statusWeightB;
     }
 
-    if (status === "overdue") {
-      return "Overdue";
-    }
+    const dateA = new Date(a.dueDate).getTime();
+    const dateB = new Date(b.dueDate).getTime();
 
-    return status
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (char) =>
-        char.toUpperCase()
-      );
-  };
+    return dateA - dateB;
+  });
 
-  const formatPriority = (priority) => {
-    if (!priority) {
-      return "Medium";
-    }
-
-    return (
-      priority.charAt(0).toUpperCase() +
-      priority.slice(1)
-    );
-  };
-
-  /* =======================================================
-     VIEW TASK
-  ======================================================= */
+  // =========================
+  // VIEW MODAL
+  // =========================
 
   const handleView = (task) => {
     setSelectedTask(task);
@@ -685,93 +544,29 @@ const Task = () => {
     setSelectedTask(null);
   };
 
-  /* =======================================================
-     EDIT TASK
-  ======================================================= */
+  // =========================
+  // EDIT MODAL
+  // =========================
 
   const handleEdit = (task) => {
-    console.log(
-      "EDIT TASK OBJECT:",
-      task
-    );
-
     if (!canManageTask(task)) {
       return;
     }
 
-    /*
-      assignedTo can come from the API in different formats:
-
-      1. assignedTo: {
-           _id: "...",
-           name: "John"
-         }
-
-      2. assignedTo: {
-           id: "...",
-           name: "John"
-         }
-
-      3. assignedTo: "MongoDB ObjectId"
-    */
-
-    const assignedUserId =
-      task?.assignedTo?._id ||
-      task?.assignedTo?.id ||
-      task?.assignedTo ||
-      "";
-
-    const editData = {
-      title: task?.title ?? "",
-
-      description:
-        task?.description ?? "",
-
-      priority:
-        task?.priority ?? "medium",
-
-      status:
-        task?.status ?? "pending",
-
-      dueDate:
-        convertToDateTimeLocal(
-          task?.dueDate
-        ),
-
-      assignedTo:
-        assignedUserId
-          ? String(assignedUserId)
-          : "",
-    };
-
-    console.log(
-      "EDIT FORM DATA:",
-      editData
-    );
-
-    console.log(
-      "ASSIGNED USER ID:",
-      assignedUserId
-    );
-
-    console.log(
-      "AVAILABLE USERS:",
-      users
-    );
-
     setEditingTask(task);
 
-    setEditForm(editData);
+    setEditForm({
+      title: task.title || "",
+      description: task.description || "",
+      priority: task.priority || "medium",
+      status: task.status || "pending",
+      dueDate: convertToDateTimeLocal(task.dueDate),
+    });
 
     setShowDetails(false);
     setSelectedTask(null);
-
     setShowEditModal(true);
   };
-
-  /* =======================================================
-     CLOSE EDIT MODAL
-  ======================================================= */
 
   const closeEditModal = () => {
     if (updating) {
@@ -780,31 +575,17 @@ const Task = () => {
 
     setShowEditModal(false);
     setEditingTask(null);
-
-    setEditForm({
-      ...DEFAULT_EDIT_FORM,
-    });
+    setEditForm(initialEditForm);
   };
 
-  /* =======================================================
-     EDIT FORM CHANGE
-  ======================================================= */
-
   const handleEditChange = (event) => {
-    const {
-      name,
-      value,
-    } = event.target;
+    const { name, value } = event.target;
 
     setEditForm((previous) => ({
       ...previous,
       [name]: value,
     }));
   };
-
-  /* =======================================================
-     UPDATE TASK
-  ======================================================= */
 
   const handleUpdate = async (event) => {
     event.preventDefault();
@@ -814,91 +595,70 @@ const Task = () => {
     }
 
     if (!canManageTask(editingTask)) {
-      setError(
+      setLocalError(
         "You do not have permission to update this task."
       );
-
       return;
     }
 
     try {
       setUpdating(true);
-      setError("");
+      setLocalError("");
 
       const payload = {
-        title:
-          editForm.title.trim(),
-
-        description:
-          editForm.description.trim(),
-
-        priority:
-          editForm.priority,
-
-        status:
-          editForm.status,
-
-        dueDate:
-          editForm.dueDate,
-
-        assignedTo:
-          editForm.assignedTo || null,
+        title: editForm.title.trim(),
+        description: editForm.description.trim(),
+        priority: editForm.priority,
+        status: editForm.status,
+        dueDate: new Date(
+          editForm.dueDate
+        ).toISOString(),
       };
 
-      console.log(
-        "UPDATE PAYLOAD:",
+      const response = await updateTask(
+        editingTask._id,
         payload
       );
 
-      await apiClient(
-        `/tasks/${editingTask._id}`,
-        {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        }
-      );
+      const updatedTask =
+        response?.data?.task ||
+        response?.task;
 
-      setShowEditModal(false);
-      setEditingTask(null);
+      if (updatedTask) {
+        dispatch(updateTaskInStore(updatedTask));
+      }
 
-      setEditForm({
-        ...DEFAULT_EDIT_FORM,
+      closeEditModal();
+
+      await loadTasks({
+        page: pagination.currentPage,
+        filters: appliedFilters,
       });
-
-      await loadTasks(
-        pagination.currentPage,
-        appliedFilters
-      );
     } catch (err) {
-      console.error(
-        "Update task error:",
-        err
-      );
+      console.error("Update task error:", err);
 
-      setError(
-        getErrorMessage(
-          err,
+      setLocalError(
+        err?.response?.data?.message ||
+          err?.message ||
           "Unable to update task."
-        )
       );
     } finally {
       setUpdating(false);
     }
   };
 
-  /* =======================================================
-     DELETE TASK
-  ======================================================= */
+  // =========================
+  // DELETE
+  // =========================
 
   const handleDelete = async (task) => {
     if (!canManageTask(task)) {
       return;
     }
 
-    const confirmed =
-      window.confirm(
-        `Are you sure you want to delete "${task.title}"?`
-      );
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${task.title}"?`
+    );
 
     if (!confirmed) {
       return;
@@ -906,323 +666,44 @@ const Task = () => {
 
     try {
       setDeletingId(task._id);
-      setError("");
+      setLocalError("");
 
-      await apiClient(
-        `/tasks/${task._id}`,
-        {
-          method: "DELETE",
-        }
-      );
+      await deleteTask(task._id);
 
-      const shouldMoveBack =
+      const shouldGoBack =
         tasks.length === 1 &&
         pagination.currentPage > 1;
 
-      const nextPage =
-        shouldMoveBack
+      await loadTasks({
+        page: shouldGoBack
           ? pagination.currentPage - 1
-          : pagination.currentPage;
-
-      await loadTasks(
-        nextPage,
-        appliedFilters
-      );
+          : pagination.currentPage,
+        filters: appliedFilters,
+      });
     } catch (err) {
-      console.error(
-        "Delete task error:",
-        err
-      );
+      console.error("Delete task error:", err);
 
-      setError(
-        getErrorMessage(
-          err,
+      setLocalError(
+        err?.response?.data?.message ||
+          err?.message ||
           "Unable to delete task."
-        )
       );
     } finally {
       setDeletingId(null);
     }
   };
 
-  /* =======================================================
-     EXPORT DATA
-  ======================================================= */
-
-  const getExportTasks = async () => {
-    try {
-      setError("");
-
-      const params =
-        buildTaskParams(
-          1,
-          appliedFilters
-        );
-
-      params.limit = 10000;
-
-      const response =
-        await getTasks(params);
-
-      const data =
-        response?.data || response;
-
-      return data?.tasks || [];
-    } catch (err) {
-      console.error(
-        "Export tasks error:",
-        err
-      );
-
-      setError(
-        getErrorMessage(
-          err,
-          "Unable to export tasks."
-        )
-      );
-
-      return [];
-    }
-  };
-
-  /* =======================================================
-     EXPORT ROWS
-  ======================================================= */
-
-  const getExportRows = (
-    exportTasks
-  ) => {
-    return exportTasks.map(
-      (task) => ({
-        Title:
-          task.title || "",
-
-        Description:
-          task.description || "",
-
-        Priority:
-          formatPriority(
-            task.priority
-          ),
-
-        Status:
-          formatStatus(
-            getDisplayStatus(task)
-          ),
-
-        "Due Date":
-          formatDateTime(
-            task.dueDate
-          ),
-
-        "Assigned To":
-          task.assignedTo?.name ||
-          "Unassigned",
-
-        "Created By":
-          task.createdBy?.name ||
-          "Unknown",
-
-        "Created At":
-          formatDateTime(
-            task.createdAt
-          ),
-      })
-    );
-  };
-
-  /* =======================================================
-     EXPORT EXCEL
-  ======================================================= */
-
-  const handleExportExcel =
-    async () => {
-      const exportTasks =
-        await getExportTasks();
-
-      if (
-        exportTasks.length === 0
-      ) {
-        setError(
-          "There are no tasks available to export."
-        );
-
-        return;
-      }
-
-      const rows =
-        getExportRows(
-          exportTasks
-        );
-
-      const worksheet =
-        XLSX.utils.json_to_sheet(
-          rows
-        );
-
-      const workbook =
-        XLSX.utils.book_new();
-
-      XLSX.utils.book_append_sheet(
-        workbook,
-        worksheet,
-        "Tasks"
-      );
-
-      XLSX.writeFile(
-        workbook,
-        `tasks-${
-          new Date()
-            .toISOString()
-            .split("T")[0]
-        }.xlsx`
-      );
-    };
-
-  /* =======================================================
-     EXPORT PDF
-  ======================================================= */
-
-  const handleExportPDF =
-    async () => {
-      const exportTasks =
-        await getExportTasks();
-
-      if (
-        exportTasks.length === 0
-      ) {
-        setError(
-          "There are no tasks available to export."
-        );
-
-        return;
-      }
-
-      const doc = new jsPDF({
-        orientation: "landscape",
-        unit: "mm",
-        format: "a4",
-      });
-
-      doc.setFontSize(18);
-
-      doc.text(
-        "Task Management Report",
-        14,
-        15
-      );
-
-      doc.setFontSize(9);
-
-      doc.text(
-        `Generated: ${new Date().toLocaleString(
-          "en-GB"
-        )}`,
-        14,
-        22
-      );
-
-      const rows =
-        exportTasks.map(
-          (task) => [
-            task.title || "",
-
-            formatPriority(
-              task.priority
-            ),
-
-            formatStatus(
-              getDisplayStatus(task)
-            ),
-
-            formatDate(
-              task.dueDate
-            ),
-
-            task.assignedTo?.name ||
-              "Unassigned",
-
-            task.createdBy?.name ||
-              "Unknown",
-          ]
-        );
-
-      autoTable(doc, {
-        startY: 28,
-
-        head: [
-          [
-            "Title",
-            "Priority",
-            "Status",
-            "Due Date",
-            "Assigned To",
-            "Created By",
-          ],
-        ],
-
-        body: rows,
-
-        styles: {
-          fontSize: 8,
-          cellPadding: 3,
-        },
-
-        headStyles: {
-          fontSize: 8,
-        },
-
-        columnStyles: {
-          0: {
-            cellWidth: 55,
-          },
-
-          1: {
-            cellWidth: 25,
-          },
-
-          2: {
-            cellWidth: 30,
-          },
-
-          3: {
-            cellWidth: 35,
-          },
-
-          4: {
-            cellWidth: 45,
-          },
-
-          5: {
-            cellWidth: 45,
-          },
-        },
-      });
-
-      doc.save(
-        `tasks-${
-          new Date()
-            .toISOString()
-            .split("T")[0]
-        }.pdf`
-      );
-    };
-
-  /* =======================================================
-     RENDER
-  ======================================================= */
+  const displayError = localError || error;
 
   return (
     <main className="task-page">
 
-      {/* =================================================
-          PAGE HEADER
-      ================================================= */}
+      {/* =========================
+          HEADER
+      ========================= */}
 
       <section className="task-page-header">
-
         <div className="task-page-heading">
-
           <span className="task-eyebrow">
             Task Management
           </span>
@@ -1230,48 +711,37 @@ const Task = () => {
           <h1>Tasks</h1>
 
           <p>
-            View, manage and keep track
-            of all your tasks.
+            View, manage and keep track of all
+            your tasks.
           </p>
-
         </div>
-
-        <button
-          type="button"
-          className="task-create-button"
-          onClick={() =>
-            navigate("/tasks/create")
-          }
-        >
-          + Create Task
-        </button>
-
       </section>
 
-      {/* =================================================
+      {/* =========================
           ERROR
-      ================================================= */}
+      ========================= */}
 
-      {error && (
+      {displayError && (
         <div className="task-error">
-          {error}
+          <span>{displayError}</span>
+
+          <button
+            type="button"
+            onClick={() => setLocalError("")}
+          >
+            ×
+          </button>
         </div>
       )}
 
-      {/* =================================================
-          TASK LIST
-      ================================================= */}
+      {/* =========================
+          TASK SECTION
+      ========================= */}
 
       <section className="task-list-section">
 
-        {/* =================================================
-            LIST HEADER
-        ================================================= */}
-
         <div className="task-list-header">
-
           <div>
-
             <h2>Tasks</h2>
 
             <p>
@@ -1281,53 +751,23 @@ const Task = () => {
                 : "tasks"}{" "}
               available
             </p>
-
           </div>
 
-          <div className="task-header-actions">
-
-            <button
-              type="button"
-              className="task-export-button task-export-excel"
-              onClick={
-                handleExportExcel
-              }
-              disabled={loading}
-            >
-              Export Excel
-            </button>
-
-            <button
-              type="button"
-              className="task-export-button task-export-pdf"
-              onClick={
-                handleExportPDF
-              }
-              disabled={loading}
-            >
-              Export PDF
-            </button>
-
-            <span className="task-page-indicator">
-              Page{" "}
-              {pagination.currentPage} of{" "}
-              {pagination.totalPages || 1}
-            </span>
-
-          </div>
-
+          <span className="task-page-indicator">
+            Page {pagination.currentPage || 1} of{" "}
+            {pagination.totalPages || 1}
+          </span>
         </div>
 
-        {/* =================================================
-            FILTER BAR
-        ================================================= */}
+        {/* =========================
+            FILTERS
+        ========================= */}
 
         <div className="task-filters">
 
-          <div className="task-filter-search">
+          <div className="task-filter-top">
 
             <div className="task-search">
-
               <span className="task-search-icon">
                 ⌕
               </span>
@@ -1335,12 +775,8 @@ const Task = () => {
               <input
                 type="text"
                 value={search}
-                onChange={
-                  handleSearchChange
-                }
-                onKeyDown={
-                  handleSearchKeyDown
-                }
+                onChange={handleSearchChange}
+                onKeyDown={handleSearchKeyDown}
                 placeholder="Search tasks by title..."
               />
 
@@ -1348,124 +784,19 @@ const Task = () => {
                 <button
                   type="button"
                   className="task-search-clear"
-                  onClick={
-                    handleClearSearch
-                  }
+                  onClick={handleClearSearch}
                   aria-label="Clear search"
                 >
                   ×
                 </button>
               )}
-
-            </div>
-
-          </div>
-
-          <div className="task-filter-controls">
-
-            <div className="task-filter-group">
-
-              <label htmlFor="task-status">
-                Status
-              </label>
-
-              <select
-                id="task-status"
-                value={statusFilter}
-                onChange={
-                  handleStatusChange
-                }
-              >
-                {STATUS_OPTIONS.map(
-                  (option) => (
-                    <option
-                      key={
-                        option.value
-                      }
-                      value={
-                        option.value
-                      }
-                    >
-                      {option.label}
-                    </option>
-                  )
-                )}
-              </select>
-
-            </div>
-
-            <div className="task-filter-group">
-
-              <label htmlFor="task-priority">
-                Priority
-              </label>
-
-              <select
-                id="task-priority"
-                value={
-                  priorityFilter
-                }
-                onChange={
-                  handlePriorityChange
-                }
-              >
-                {PRIORITY_OPTIONS.map(
-                  (option) => (
-                    <option
-                      key={
-                        option.value
-                      }
-                      value={
-                        option.value
-                      }
-                    >
-                      {option.label}
-                    </option>
-                  )
-                )}
-              </select>
-
-            </div>
-
-            <div className="task-filter-group">
-
-              <label htmlFor="task-due-date">
-                Due Date
-              </label>
-
-              <select
-                id="task-due-date"
-                value={sortOrder}
-                onChange={
-                  handleSortChange
-                }
-              >
-                {SORT_OPTIONS.map(
-                  (option) => (
-                    <option
-                      key={
-                        option.value
-                      }
-                      value={
-                        option.value
-                      }
-                    >
-                      {option.label}
-                    </option>
-                  )
-                )}
-              </select>
-
             </div>
 
             <div className="task-filter-actions">
-
               <button
                 type="button"
                 className="task-filter-apply"
-                onClick={
-                  handleApplyFilters
-                }
+                onClick={handleApplyFilters}
               >
                 Apply
               </button>
@@ -1473,25 +804,85 @@ const Task = () => {
               <button
                 type="button"
                 className="task-filter-clear"
-                onClick={
-                  handleClearFilters
-                }
+                onClick={handleClearFilters}
               >
                 Clear
               </button>
+            </div>
 
+          </div>
+
+          <div className="task-filter-controls">
+
+            <div className="task-filter-group">
+              <label htmlFor="task-status">
+                Status
+              </label>
+
+              <select
+                id="task-status"
+                value={statusFilter}
+                onChange={handleStatusChange}
+              >
+                {STATUS_OPTIONS.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="task-filter-group">
+              <label htmlFor="task-priority">
+                Priority
+              </label>
+
+              <select
+                id="task-priority"
+                value={priorityFilter}
+                onChange={handlePriorityChange}
+              >
+                {PRIORITY_OPTIONS.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="task-filter-group">
+              <label htmlFor="task-due-date">
+                Due Date
+              </label>
+
+              <select
+                id="task-due-date"
+                value={sortOrder}
+                onChange={handleSortChange}
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
           </div>
 
           {(appliedFilters.search ||
-            appliedFilters.status !==
-              "all" ||
-            appliedFilters.priority !==
-              "all" ||
-            appliedFilters.sortOrder !==
-              "asc") && (
-
+            appliedFilters.status !== "all" ||
+            appliedFilters.priority !== "all" ||
+            appliedFilters.sortOrder !== "asc") && (
             <div className="task-filter-summary">
 
               <span>
@@ -1500,15 +891,11 @@ const Task = () => {
 
               {appliedFilters.search && (
                 <span className="task-filter-badge">
-                  Search:{" "}
-                  {
-                    appliedFilters.search
-                  }
+                  Search: {appliedFilters.search}
                 </span>
               )}
 
-              {appliedFilters.status !==
-                "all" && (
+              {appliedFilters.status !== "all" && (
                 <span className="task-filter-badge">
                   Status:{" "}
                   {formatStatus(
@@ -1517,8 +904,7 @@ const Task = () => {
                 </span>
               )}
 
-              {appliedFilters.priority !==
-                "all" && (
+              {appliedFilters.priority !== "all" && (
                 <span className="task-filter-badge">
                   Priority:{" "}
                   {formatPriority(
@@ -1527,8 +913,7 @@ const Task = () => {
                 </span>
               )}
 
-              {appliedFilters.sortOrder ===
-                "desc" && (
+              {appliedFilters.sortOrder === "desc" && (
                 <span className="task-filter-badge">
                   Latest First
                 </span>
@@ -1539,327 +924,239 @@ const Task = () => {
 
         </div>
 
-        {/* =================================================
-            FILTER INFORMATION
-        ================================================= */}
-
-        {(appliedFilters.search ||
-          appliedFilters.status !==
-            "all" ||
-          appliedFilters.priority !==
-            "all") && (
-
-          <div className="task-active-filters">
-
-            <span>
-              Filters applied
-            </span>
-
-            {appliedFilters.search && (
-              <span className="task-filter-chip">
-                Search: "
-                {
-                  appliedFilters.search
-                }
-                "
-              </span>
-            )}
-
-            {appliedFilters.status !==
-              "all" && (
-              <span className="task-filter-chip">
-                Status:{" "}
-                {formatStatus(
-                  appliedFilters.status
-                )}
-              </span>
-            )}
-
-            {appliedFilters.priority !==
-              "all" && (
-              <span className="task-filter-chip">
-                Priority:{" "}
-                {formatPriority(
-                  appliedFilters.priority
-                )}
-              </span>
-            )}
-
-          </div>
-        )}
-
-        {/* =================================================
+        {/* =========================
             LOADING
-        ================================================= */}
+        ========================= */}
 
         {loading && (
           <div className="task-loading">
-
             <div className="task-loading-spinner" />
 
             <p>
               Loading tasks...
             </p>
+          </div>
+        )}
+
+        {/* =========================
+            EMPTY
+        ========================= */}
+
+        {!loading && tasks.length === 0 && (
+          <div className="task-empty">
+
+            <div className="task-empty-icon">
+              ✓
+            </div>
+
+            <h3>
+              {appliedFilters.search ||
+              appliedFilters.status !== "all" ||
+              appliedFilters.priority !== "all"
+                ? "No matching tasks"
+                : "No tasks found"}
+            </h3>
+
+            <p>
+              {appliedFilters.search ||
+              appliedFilters.status !== "all" ||
+              appliedFilters.priority !== "all"
+                ? "Try changing your search or filters."
+                : "There are currently no tasks available."}
+            </p>
+
+            {(appliedFilters.search ||
+              appliedFilters.status !== "all" ||
+              appliedFilters.priority !== "all") && (
+              <button
+                type="button"
+                className="task-empty-button"
+                onClick={handleClearFilters}
+              >
+                Clear Filters
+              </button>
+            )}
 
           </div>
         )}
 
-        {/* =================================================
-            EMPTY STATE
-        ================================================= */}
-
-        {!loading &&
-          tasks.length === 0 && (
-
-            <div className="task-empty">
-
-              <div className="task-empty-icon">
-                ✓
-              </div>
-
-              <h3>
-                {appliedFilters.search ||
-                appliedFilters.status !==
-                  "all" ||
-                appliedFilters.priority !==
-                  "all"
-                  ? "No matching tasks"
-                  : "No tasks found"}
-              </h3>
-
-              <p>
-                {appliedFilters.search ||
-                appliedFilters.status !==
-                  "all" ||
-                appliedFilters.priority !==
-                  "all"
-                  ? "Try changing your search or filters."
-                  : "There are currently no tasks available."}
-              </p>
-
-              {(appliedFilters.search ||
-                appliedFilters.status !==
-                  "all" ||
-                appliedFilters.priority !==
-                  "all") && (
-                <button
-                  type="button"
-                  onClick={
-                    handleClearFilters
-                  }
-                >
-                  Clear Filters
-                </button>
-              )}
-
-            </div>
-          )}
-
-        {/* =================================================
+        {/* =========================
             TASK CARDS
-        ================================================= */}
+        ========================= */}
 
-        {!loading &&
-          sortedTasks.length > 0 && (
+        {!loading && sortedTasks.length > 0 && (
+          <div className="task-list">
 
-            <div className="task-list">
+            {sortedTasks.map((task) => {
+              const canManage =
+                canManageTask(task);
 
-              {sortedTasks.map(
-                (task) => {
-                  const canManage =
-                    canManageTask(task);
+              const displayStatus =
+                getDisplayStatus(task);
 
-                  const displayStatus =
-                    getDisplayStatus(task);
+              return (
+                <article
+                  key={task._id}
+                  className={`task-card ${
+                    task.priority || "medium"
+                  } ${
+                    displayStatus === "overdue"
+                      ? "overdue"
+                      : ""
+                  }`}
+                >
 
-                  return (
-                    <article
-                      key={task._id}
-                      className={`task-card ${
-                        task.priority ||
-                        "medium"
-                      } ${
-                        displayStatus ===
-                        "overdue"
-                          ? "task-card-overdue"
-                          : ""
-                      }`}
-                    >
+                  <div className="task-card-main">
 
-                      <div className="task-card-main">
+                    <div className="task-card-title-row">
 
-                        <div className="task-card-title-row">
+                      <h3>
+                        {task.title}
+                      </h3>
 
-                          <h3>
-                            {task.title}
-                          </h3>
-
-                          <span
-                            className={`task-priority task-priority-${task.priority}`}
-                          >
-                            {formatPriority(
-                              task.priority
-                            )}
-                          </span>
-
-                        </div>
-
-                        {task.description && (
-                          <p
-                            className="task-description"
-                            title={
-                              task.description
-                            }
-                          >
-                            {
-                              task.description
-                            }
-                          </p>
+                      <span
+                        className={`task-priority task-priority-${task.priority}`}
+                      >
+                        {formatPriority(
+                          task.priority
                         )}
+                      </span>
 
-                        <div className="task-card-actions">
+                    </div>
 
-                          <button
-                            type="button"
-                            className="task-action task-action-view"
-                            onClick={() =>
-                              handleView(
-                                task
-                              )
-                            }
-                          >
-                            <span className="task-action-icon">
-                              ◉
-                            </span>
-                            View
-                          </button>
+                    {task.description && (
+                      <p
+                        className="task-description"
+                        title={task.description}
+                      >
+                        {task.description}
+                      </p>
+                    )}
 
-                          {canManage && (
-                            <button
-                              type="button"
-                              className="task-action task-action-edit"
-                              onClick={() =>
-                                handleEdit(
-                                  task
-                                )
-                              }
-                            >
-                              <span className="task-action-icon">
-                                ✎
-                              </span>
-                              Edit
-                            </button>
-                          )}
+                    <div className="task-card-actions">
 
-                          {canManage && (
-                            <button
-                              type="button"
-                              className="task-action task-action-delete"
-                              disabled={
-                                deletingId ===
-                                task._id
-                              }
-                              onClick={() =>
-                                handleDelete(
-                                  task
-                                )
-                              }
-                            >
-                              <span
-                                className="task-action-icon"
-                                aria-hidden="true"
-                              >
-                                🗑
-                              </span>
+                      <button
+                        type="button"
+                        className="task-action task-action-view"
+                        onClick={() =>
+                          handleView(task)
+                        }
+                      >
+                        <span className="task-action-icon">
+                          ◉
+                        </span>
+                        View
+                      </button>
 
-                              {deletingId ===
-                              task._id
-                                ? "Deleting..."
-                                : "Delete"}
-                            </button>
-                          )}
+                      {canManage && (
+                        <button
+                          type="button"
+                          className="task-action task-action-edit"
+                          onClick={() =>
+                            handleEdit(task)
+                          }
+                        >
+                          <span className="task-action-icon">
+                            ✎
+                          </span>
+                          Edit
+                        </button>
+                      )}
 
-                        </div>
-
-                      </div>
-
-                      <div className="task-card-meta">
-
-                        <div className="task-meta-item">
-
-                          <span className="task-meta-label">
-                            Status
+                      {canManage && (
+                        <button
+                          type="button"
+                          className="task-action task-action-delete"
+                          disabled={
+                            deletingId === task._id
+                          }
+                          onClick={() =>
+                            handleDelete(task)
+                          }
+                        >
+                          <span className="task-action-icon">
+                            ⌫
                           </span>
 
-                          <span
-                            className={`task-status task-status-${displayStatus}`}
-                          >
-                            {formatStatus(
-                              displayStatus
-                            )}
-                          </span>
+                          {deletingId === task._id
+                            ? "Deleting..."
+                            : "Delete"}
+                        </button>
+                      )}
 
-                        </div>
+                    </div>
 
-                        <div className="task-meta-item">
+                  </div>
 
-                          <span className="task-meta-label">
-                            Due
-                          </span>
+                  <div className="task-card-meta">
 
-                          <strong>
-                            {formatDate(
-                              task.dueDate
-                            )}
-                          </strong>
+                    <div className="task-meta-item">
+                      <span className="task-meta-label">
+                        Status
+                      </span>
 
-                        </div>
+                      <span
+                        className={`task-status task-status-${displayStatus}`}
+                      >
+                        {formatStatus(
+                          displayStatus
+                        )}
+                      </span>
+                    </div>
 
-                        <div className="task-meta-item">
+                    <div className="task-meta-item">
+                      <span className="task-meta-label">
+                        Due
+                      </span>
 
-                          <span className="task-meta-label">
-                            Assigned To
-                          </span>
+                      <strong
+                        className={
+                          displayStatus === "overdue"
+                            ? "task-due-overdue"
+                            : ""
+                        }
+                      >
+                        {formatDate(task.dueDate)}
+                      </strong>
+                    </div>
 
-                          <strong>
-                            {task.assignedTo
-                              ?.name ||
-                              "Unassigned"}
-                          </strong>
+                    <div className="task-meta-item">
+                      <span className="task-meta-label">
+                        Assigned To
+                      </span>
 
-                        </div>
+                      <strong>
+                        {task.assignedTo?.name ||
+                          "Self"}
+                      </strong>
+                    </div>
 
-                        <div className="task-meta-item">
+                    <div className="task-meta-item">
+                      <span className="task-meta-label">
+                        Created By
+                      </span>
 
-                          <span className="task-meta-label">
-                            Created By
-                          </span>
+                      <strong>
+                        {task.createdBy?.name ||
+                          "Unknown"}
+                      </strong>
+                    </div>
 
-                          <strong>
-                            {task.createdBy
-                              ?.name ||
-                              "Unknown"}
-                          </strong>
+                  </div>
 
-                        </div>
+                </article>
+              );
+            })}
 
-                      </div>
+          </div>
+        )}
 
-                    </article>
-                  );
-                }
-              )}
-
-            </div>
-          )}
-
-        {/* =================================================
+        {/* =========================
             PAGINATION
-        ================================================= */}
+        ========================= */}
 
         {!loading &&
           pagination.totalPages > 1 && (
-
             <div className="task-pagination">
 
               <button
@@ -1869,8 +1166,7 @@ const Task = () => {
                 }
                 onClick={() =>
                   handlePageChange(
-                    pagination.currentPage -
-                      1
+                    pagination.currentPage - 1
                   )
                 }
               >
@@ -1881,13 +1177,10 @@ const Task = () => {
 
                 {Array.from(
                   {
-                    length:
-                      pagination.totalPages,
+                    length: pagination.totalPages,
                   },
-                  (_, index) =>
-                    index + 1
+                  (_, index) => index + 1
                 ).map((page) => (
-
                   <button
                     type="button"
                     key={page}
@@ -1898,14 +1191,11 @@ const Task = () => {
                         : ""
                     }
                     onClick={() =>
-                      handlePageChange(
-                        page
-                      )
+                      handlePageChange(page)
                     }
                   >
                     {page}
                   </button>
-
                 ))}
 
               </div>
@@ -1917,8 +1207,7 @@ const Task = () => {
                 }
                 onClick={() =>
                   handlePageChange(
-                    pagination.currentPage +
-                      1
+                    pagination.currentPage + 1
                   )
                 }
               >
@@ -1934,526 +1223,380 @@ const Task = () => {
           VIEW TASK MODAL
       ================================================= */}
 
-      {showDetails &&
-        selectedTask && (
-
+      {showDetails && selectedTask && (
+        <div
+          className="task-modal-overlay"
+          onClick={closeDetails}
+        >
           <div
-            className="task-modal-overlay"
-            onClick={closeDetails}
+            className="task-modal task-details-modal"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
 
-            <div
-              className="task-modal task-details-modal"
-              onClick={(event) =>
-                event.stopPropagation()
-              }
-            >
+            <div className="task-modal-header">
 
-              <div className="task-modal-header">
+              <div className="task-modal-heading">
 
-                <div className="task-modal-heading">
+                <span className="task-eyebrow">
+                  Task Details
+                </span>
 
-                  <span className="task-eyebrow">
-                    Task Details
-                  </span>
+                <h2>
+                  {selectedTask.title}
+                </h2>
 
-                  <h2>
-                    {selectedTask.title}
-                  </h2>
-
-                </div>
-
-                <button
-                  type="button"
-                  className="task-modal-close"
-                  onClick={
-                    closeDetails
-                  }
-                  aria-label="Close"
-                >
-                  ×
-                </button>
+                <p>
+                  Complete information about this task.
+                </p>
 
               </div>
 
-              <div className="task-modal-body">
+              <button
+                type="button"
+                className="task-modal-close"
+                onClick={closeDetails}
+                aria-label="Close"
+              >
+                ×
+              </button>
 
-                <div className="task-modal-badges">
+            </div>
 
-                  <span
-                    className={`task-priority task-priority-${selectedTask.priority}`}
-                  >
-                    {formatPriority(
-                      selectedTask.priority
-                    )}
-                  </span>
+            <div className="task-modal-body">
 
-                  <span
-                    className={`task-status task-status-${getDisplayStatus(
+              <div className="task-modal-badges">
+
+                <span
+                  className={`task-priority task-priority-${selectedTask.priority}`}
+                >
+                  {formatPriority(
+                    selectedTask.priority
+                  )}
+                </span>
+
+                <span
+                  className={`task-status task-status-${getDisplayStatus(
+                    selectedTask
+                  )}`}
+                >
+                  {formatStatus(
+                    getDisplayStatus(
                       selectedTask
-                    )}`}
-                  >
-                    {formatStatus(
-                      getDisplayStatus(
-                        selectedTask
-                      )
-                    )}
-                  </span>
-
-                </div>
-
-                <div className="task-modal-description">
-
-                  <span className="task-modal-label">
-                    Description
-                  </span>
-
-                  <p>
-                    {selectedTask.description ||
-                      "No description provided."}
-                  </p>
-
-                </div>
-
-                <div className="task-modal-grid">
-
-                  <div className="task-detail-box">
-
-                    <span>
-                      Due Date
-                    </span>
-
-                    <strong>
-                      {formatDateTime(
-                        selectedTask.dueDate
-                      )}
-                    </strong>
-
-                  </div>
-
-                  <div className="task-detail-box">
-
-                    <span>
-                      Assigned To
-                    </span>
-
-                    <strong>
-                      {selectedTask
-                        .assignedTo
-                        ?.name ||
-                        "Unassigned"}
-                    </strong>
-
-                    {selectedTask
-                      .assignedTo
-                      ?.email && (
-                      <small>
-                        {
-                          selectedTask
-                            .assignedTo
-                            .email
-                        }
-                      </small>
-                    )}
-
-                  </div>
-
-                  <div className="task-detail-box">
-
-                    <span>
-                      Created By
-                    </span>
-
-                    <strong>
-                      {selectedTask
-                        .createdBy
-                        ?.name ||
-                        "Unknown"}
-                    </strong>
-
-                    {selectedTask
-                      .createdBy
-                      ?.email && (
-                      <small>
-                        {
-                          selectedTask
-                            .createdBy
-                            .email
-                        }
-                      </small>
-                    )}
-
-                  </div>
-
-                  <div className="task-detail-box">
-
-                    <span>
-                      Created At
-                    </span>
-
-                    <strong>
-                      {formatDateTime(
-                        selectedTask.createdAt
-                      )}
-                    </strong>
-
-                  </div>
-
-                </div>
+                    )
+                  )}
+                </span>
 
               </div>
 
-              <div className="task-modal-footer">
+              <div className="task-modal-description">
 
-                <button
-                  type="button"
-                  className="task-modal-close-button"
-                  onClick={
-                    closeDetails
-                  }
-                >
-                  Close
-                </button>
+                <span className="task-modal-label">
+                  Description
+                </span>
 
-                {canManageTask(
-                  selectedTask
-                ) && (
-                  <button
-                    type="button"
-                    className="task-modal-edit-button"
-                    onClick={() =>
-                      handleEdit(
-                        selectedTask
-                      )
-                    }
-                  >
-                    Edit Task
-                  </button>
-                )}
+                <p>
+                  {selectedTask.description ||
+                    "No description provided."}
+                </p>
+
+              </div>
+
+              <div className="task-modal-grid">
+
+                <div className="task-detail-box">
+                  <span>
+                    Due Date
+                  </span>
+
+                  <strong>
+                    {formatDateTime(
+                      selectedTask.dueDate
+                    )}
+                  </strong>
+                </div>
+
+                <div className="task-detail-box">
+                  <span>
+                    Assigned To
+                  </span>
+
+                  <strong>
+                    {selectedTask.assignedTo?.name ||
+                      "Self"}
+                  </strong>
+
+                  {selectedTask.assignedTo?.email && (
+                    <small>
+                      {
+                        selectedTask.assignedTo.email
+                      }
+                    </small>
+                  )}
+                </div>
+
+                <div className="task-detail-box">
+                  <span>
+                    Created By
+                  </span>
+
+                  <strong>
+                    {selectedTask.createdBy?.name ||
+                      "Unknown"}
+                  </strong>
+
+                  {selectedTask.createdBy?.email && (
+                    <small>
+                      {
+                        selectedTask.createdBy.email
+                      }
+                    </small>
+                  )}
+                </div>
+
+                <div className="task-detail-box">
+                  <span>
+                    Created At
+                  </span>
+
+                  <strong>
+                    {formatDateTime(
+                      selectedTask.createdAt
+                    )}
+                  </strong>
+                </div>
 
               </div>
 
             </div>
 
+            <div className="task-modal-footer">
+
+              <button
+                type="button"
+                className="task-modal-close-button"
+                onClick={closeDetails}
+              >
+                Close
+              </button>
+
+              {canManageTask(selectedTask) && (
+                <button
+                  type="button"
+                  className="task-modal-edit-button"
+                  onClick={() =>
+                    handleEdit(selectedTask)
+                  }
+                >
+                  Edit Task
+                </button>
+              )}
+
+            </div>
+
           </div>
-        )}
+        </div>
+      )}
 
       {/* =================================================
           EDIT TASK MODAL
       ================================================= */}
 
-      {showEditModal &&
-        editingTask && (
-
+      {showEditModal && editingTask && (
+        <div
+          className="task-modal-overlay"
+          onClick={closeEditModal}
+        >
           <div
-            className="task-modal-overlay"
-            onClick={closeEditModal}
+            className="task-modal task-edit-modal"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
 
-            <div
-              className="task-modal task-edit-modal"
-              onClick={(event) =>
-                event.stopPropagation()
-              }
+            <div className="task-modal-header">
+
+              <div className="task-modal-heading">
+
+                <span className="task-eyebrow">
+                  Task Management
+                </span>
+
+                <h2>
+                  Edit Task
+                </h2>
+
+                <p>
+                  Update the details of this task.
+                </p>
+
+              </div>
+
+              <button
+                type="button"
+                className="task-modal-close"
+                onClick={closeEditModal}
+                disabled={updating}
+                aria-label="Close"
+              >
+                ×
+              </button>
+
+            </div>
+
+            <form
+              className="task-edit-form"
+              onSubmit={handleUpdate}
             >
 
-              <div className="task-modal-header">
+              <div className="task-edit-form-group">
 
-                <div className="task-modal-heading">
+                <label htmlFor="edit-title">
+                  Task Title
+                </label>
 
-                  <span className="task-eyebrow">
-                    Task Management
-                  </span>
+                <input
+                  id="edit-title"
+                  name="title"
+                  type="text"
+                  value={editForm.title}
+                  onChange={handleEditChange}
+                  placeholder="Enter task title"
+                  maxLength={100}
+                  required
+                />
 
-                  <h2>
-                    Edit Task
-                  </h2>
+              </div>
 
-                  <p>
-                    Update the details of
-                    this task.
-                  </p>
+              <div className="task-edit-form-group">
+
+                <label htmlFor="edit-description">
+                  Description
+                </label>
+
+                <textarea
+                  id="edit-description"
+                  name="description"
+                  value={editForm.description}
+                  onChange={handleEditChange}
+                  placeholder="Describe the task..."
+                  maxLength={1000}
+                  rows={5}
+                />
+
+                <span className="task-form-hint">
+                  {editForm.description.length}/1000
+                </span>
+
+              </div>
+
+              <div className="task-form-grid">
+
+                <div className="task-edit-form-group">
+
+                  <label htmlFor="edit-priority">
+                    Priority
+                  </label>
+
+                  <select
+                    id="edit-priority"
+                    name="priority"
+                    value={editForm.priority}
+                    onChange={handleEditChange}
+                  >
+                    <option value="high">
+                      High
+                    </option>
+
+                    <option value="medium">
+                      Medium
+                    </option>
+
+                    <option value="low">
+                      Low
+                    </option>
+                  </select>
 
                 </div>
 
+                <div className="task-edit-form-group">
+
+                  <label htmlFor="edit-status">
+                    Status
+                  </label>
+
+                  <select
+                    id="edit-status"
+                    name="status"
+                    value={editForm.status}
+                    onChange={handleEditChange}
+                  >
+                    <option value="pending">
+                      Pending
+                    </option>
+
+                    <option value="in_progress">
+                      In Progress
+                    </option>
+
+                    <option value="completed">
+                      Completed
+                    </option>
+                  </select>
+
+                </div>
+
+              </div>
+
+              <div className="task-edit-form-group">
+
+                <label htmlFor="edit-dueDate">
+                  Due Date
+                </label>
+
+                <input
+                  id="edit-dueDate"
+                  name="dueDate"
+                  type="datetime-local"
+                  value={editForm.dueDate}
+                  onChange={handleEditChange}
+                  required
+                />
+
+              </div>
+
+              <div className="task-edit-footer">
+
                 <button
                   type="button"
-                  className="task-modal-close"
-                  onClick={
-                    closeEditModal
-                  }
+                  className="task-modal-close-button"
+                  onClick={closeEditModal}
                   disabled={updating}
-                  aria-label="Close"
                 >
-                  ×
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="task-modal-edit-button"
+                  disabled={updating}
+                >
+                  {updating
+                    ? "Saving Changes..."
+                    : "Save Changes"}
                 </button>
 
               </div>
 
-              <form
-                className="task-edit-form"
-                onSubmit={handleUpdate}
-              >
-
-                {/* =================================================
-                    TITLE
-                ================================================= */}
-
-                <div className="task-edit-form-group">
-
-                  <label htmlFor="edit-title">
-                    Task Title
-                  </label>
-
-                  <input
-                    id="edit-title"
-                    name="title"
-                    type="text"
-                    value={
-                      editForm.title
-                    }
-                    onChange={
-                      handleEditChange
-                    }
-                    placeholder="Enter task title"
-                    maxLength={100}
-                    required
-                  />
-
-                </div>
-
-                {/* =================================================
-                    DESCRIPTION
-                ================================================= */}
-
-                <div className="task-edit-form-group">
-
-                  <label htmlFor="edit-description">
-                    Description
-                  </label>
-
-                  <textarea
-                    id="edit-description"
-                    name="description"
-                    value={
-                      editForm.description
-                    }
-                    onChange={
-                      handleEditChange
-                    }
-                    placeholder="Describe the task..."
-                    maxLength={1000}
-                    rows={5}
-                  />
-
-                  <span className="task-form-hint">
-                    {
-                      editForm.description
-                        .length
-                    }
-                    /1000
-                  </span>
-
-                </div>
-
-                {/* =================================================
-                    PRIORITY + STATUS
-                ================================================= */}
-
-                <div className="task-edit-form-grid">
-
-                  <div className="task-edit-form-group">
-
-                    <label htmlFor="edit-priority">
-                      Priority
-                    </label>
-
-                    <select
-                      id="edit-priority"
-                      name="priority"
-                      value={
-                        editForm.priority
-                      }
-                      onChange={
-                        handleEditChange
-                      }
-                    >
-
-                      <option value="high">
-                        High
-                      </option>
-
-                      <option value="medium">
-                        Medium
-                      </option>
-
-                      <option value="low">
-                        Low
-                      </option>
-
-                    </select>
-
-                  </div>
-
-                  <div className="task-edit-form-group">
-
-                    <label htmlFor="edit-status">
-                      Status
-                    </label>
-
-                    <select
-                      id="edit-status"
-                      name="status"
-                      value={
-                        editForm.status
-                      }
-                      onChange={
-                        handleEditChange
-                      }
-                    >
-
-                      <option value="pending">
-                        Pending
-                      </option>
-
-                      <option value="in_progress">
-                        In Progress
-                      </option>
-
-                      <option value="completed">
-                        Completed
-                      </option>
-
-                    </select>
-
-                  </div>
-
-                </div>
-
-                {/* =================================================
-                    ASSIGNED TO
-                ================================================= */}
-
-                <div className="task-edit-form-group">
-
-                  <label htmlFor="edit-assignedTo">
-                    Assigned To
-                  </label>
-
-                  <select
-                    id="edit-assignedTo"
-                    name="assignedTo"
-                    value={
-                      editForm.assignedTo
-                    }
-                    onChange={
-                      handleEditChange
-                    }
-                  >
-
-                    <option value="">
-                      Unassigned
-                    </option>
-
-                    {users.map(
-                      (availableUser) => {
-
-                        const userId =
-                          availableUser?._id ||
-                          availableUser?.id;
-
-                        if (!userId) {
-                          return null;
-                        }
-
-                        return (
-                          <option
-                            key={userId}
-                            value={String(
-                              userId
-                            )}
-                          >
-                            {availableUser?.name ||
-                              availableUser?.email ||
-                              "Unnamed User"}
-                          </option>
-                        );
-                      }
-                    )}
-
-                  </select>
-
-                  {users.length === 0 && (
-                    <span className="task-form-hint">
-                      No users available.
-                    </span>
-                  )}
-
-                </div>
-
-                {/* =================================================
-                    DUE DATE
-                ================================================= */}
-
-                <div className="task-edit-form-group">
-
-                  <label htmlFor="edit-dueDate">
-                    Due Date
-                  </label>
-
-                  <input
-                    id="edit-dueDate"
-                    name="dueDate"
-                    type="datetime-local"
-                    value={
-                      editForm.dueDate
-                    }
-                    onChange={
-                      handleEditChange
-                    }
-                    required
-                  />
-
-                </div>
-
-                {/* =================================================
-                    FOOTER
-                ================================================= */}
-
-                <div className="task-edit-footer">
-
-                  <button
-                    type="button"
-                    className="task-modal-close-button"
-                    onClick={
-                      closeEditModal
-                    }
-                    disabled={updating}
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="submit"
-                    className="task-modal-edit-button"
-                    disabled={updating}
-                  >
-                    {updating
-                      ? "Saving Changes..."
-                      : "Save Changes"}
-                  </button>
-
-                </div>
-
-              </form>
-
-            </div>
+            </form>
 
           </div>
-        )}
+        </div>
+      )}
 
     </main>
   );
 };
 
-export default Task;
+export default Tasks;
