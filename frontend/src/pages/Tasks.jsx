@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getTasks } from "../api/taskApi";
 import apiClient from "../api/apiClient";
@@ -35,7 +35,7 @@ const Task = () => {
   const [editingTask, setEditingTask] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [updating, setUpdating] = useState(false);
-
+  const navigate = useNavigate();
   const [editForm, setEditForm] = useState({
     title: "",
     description: "",
@@ -524,13 +524,11 @@ const Task = () => {
         </div>
 
         <button
-          type="button"
-          className="task-create-button"
-          onClick={() =>
-            console.log("Create task")
-          }
-        >
-          + Create Task
+            type="button"
+            className="task-create-button"
+            onClick={() => navigate("/tasks/create")}
+            >
+            + Create Task
         </button>
 
       </section>

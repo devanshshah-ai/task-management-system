@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Tasks from "./pages/Tasks";
+import CreateTask from "./pages/CreateTask";
 
 import DashboardLayout from "./layouts/DashboardLayout";
 
@@ -11,18 +12,47 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public Routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
 
-        {/* Protected Application Layout */}
+        {/* Public Routes */}
+
+        <Route
+          path="/login"
+          element={<Login />}
+        />
+
+        <Route
+          path="/register"
+          element={<Register />}
+        />
+
+        {/* Dashboard Layout */}
+
         <Route element={<DashboardLayout />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/tasks" element={<Tasks />} />
+
+          <Route
+            path="/dashboard"
+            element={<Dashboard />}
+          />
+
+          <Route
+            path="/tasks"
+            element={<Tasks />}
+          />
+
+          <Route
+            path="/tasks/create"
+            element={<CreateTask />}
+          />
+
         </Route>
 
         {/* Fallback */}
-        <Route path="*" element={<Login />} />
+
+        <Route
+          path="*"
+          element={<Login />}
+        />
+
       </Routes>
     </BrowserRouter>
   );
