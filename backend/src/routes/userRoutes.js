@@ -2,8 +2,11 @@ const express = require("express");
 
 const {
   getUsers,
+  createUser,
   getUserById,
   getUserTasks,
+  deleteUser,
+  resetUserPassword,
 } = require("../controllers/userController");
 
 const { protect } = require("../middleware/authMiddleware");
@@ -22,6 +25,17 @@ router.get(
   "/",
   authorize("admin"),
   getUsers
+);
+
+// ==========================================
+// CREATE USER / ADMIN
+// Admin only
+// ==========================================
+
+router.post(
+  "/",
+  authorize("admin"),
+  createUser
 );
 
 // ==========================================
@@ -46,6 +60,28 @@ router.get(
   "/:id",
   authorize("admin", "user"),
   getUserById
+);
+
+// ==========================================
+// DELETE USER
+// Admin only
+// ==========================================
+
+router.delete(
+  "/:id",
+  authorize("admin"),
+  deleteUser
+);
+
+// ==========================================
+// RESET USER PASSWORD
+// Admin only
+// ==========================================
+
+router.put(
+  "/:id/reset-password",
+  authorize("admin"),
+  resetUserPassword
 );
 
 module.exports = router;
