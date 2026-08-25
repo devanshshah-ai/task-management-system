@@ -1981,3 +1981,55 @@ span.task-action-icon {
   align-items: center;
   justify-content: center;
 } 
+.task-page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.task-create-button,
+.task-export-button {
+  border: none;
+  border-radius: 10px;
+  padding: 11px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.task-create-button {
+  background: #111827;
+  color: #ffffff;
+}
+
+.task-create-button:hover {
+  opacity: 0.9;
+}
+
+.task-export-button {
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #d1d5db;
+}
+
+.task-export-button:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.task-export-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .task-page-header-actions {
+    width: 100%;
+  }
+
+  .task-create-button,
+  .task-export-button {
+    flex: 1;
+  }
+}

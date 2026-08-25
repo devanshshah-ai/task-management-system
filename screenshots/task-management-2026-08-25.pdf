@@ -1,0 +1,424 @@
+%PDF-1.3
+%ºß¬à
+3 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 841.8899999999999864 595.2799999999999727]
+/Contents 4 0 R
+>>
+endobj
+4 0 obj
+<<
+/Length 3246
+>>
+stream
+0.5670000000000001 w
+0 G
+BT
+/F1 18 Tf
+20.6999999999999993 TL
+0 g
+39.6850393700787407 552.7603149606298985 Td
+(Task Management System) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0 g
+39.6850393700787407 532.9177952755904926 Td
+(Task Report - 25/08/2026) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0 g
+39.6850393700787407 513.0752755905512004 Td
+(Total Tasks: 1) Tj
+ET
+0. G
+0.5670000000000001 w
+0. G
+0.5670000000000001 w
+0.16 0.5 0.73 rg
+0.78 G
+0. w
+0.16 0.5 0.73 rg
+40. 496.067401574803057 198.4251968503937178 -27.3578740157480311 re
+f
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+1. g
+48.5039370078740077 479.9134645669291217 Td
+(Title) Tj
+ET
+0.16 0.5 0.73 rg
+0.78 G
+0. w
+0.16 0.5 0.73 rg
+238.4251968503937462 496.067401574803057 70.8661417322834666 -27.3578740157480311 re
+f
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+1. g
+246.9291338582677611 479.9134645669291217 Td
+(Priority) Tj
+ET
+0.16 0.5 0.73 rg
+0.78 G
+0. w
+0.16 0.5 0.73 rg
+309.2913385826772128 496.067401574803057 85.0393700787401627 -27.3578740157480311 re
+f
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+1. g
+317.7952755905512277 479.9134645669291217 Td
+(Status) Tj
+ET
+0.16 0.5 0.73 rg
+0.78 G
+0. w
+0.16 0.5 0.73 rg
+394.3307086614173613 496.067401574803057 99.2125984251968589 -27.3578740157480311 re
+f
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+1. g
+402.8346456692913762 479.9134645669291217 Td
+(Due Date) Tj
+ET
+0.16 0.5 0.73 rg
+0.78 G
+0. w
+0.16 0.5 0.73 rg
+493.5433070866142202 496.067401574803057 127.5590551181102512 -27.3578740157480311 re
+f
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+1. g
+502.0472440944882351 479.9134645669291217 Td
+(Assigned To) Tj
+ET
+0.16 0.5 0.73 rg
+0.78 G
+0. w
+0.16 0.5 0.73 rg
+621.1023622047244999 496.067401574803057 127.5590551181102512 -27.3578740157480311 re
+f
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+1. g
+629.6062992125985147 479.9134645669291217 Td
+(Created By) Tj
+ET
+0. G
+0.5670000000000001 w
+0.96 g
+0.78 G
+0. w
+0.96 g
+40. 468.7095275590550045 198.4251968503937178 -27.3578740157480311 re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.314 g
+48.5039370078740077 452.5555905511810693 Td
+(test task from create form) Tj
+ET
+0.96 g
+0.78 G
+0. w
+0.96 g
+238.4251968503937462 468.7095275590550045 70.8661417322834666 -27.3578740157480311 re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.314 g
+246.9291338582677611 452.5555905511810693 Td
+(Low) Tj
+ET
+0.96 g
+0.78 G
+0. w
+0.96 g
+309.2913385826772128 468.7095275590550045 85.0393700787401627 -27.3578740157480311 re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.314 g
+317.7952755905512277 452.5555905511810693 Td
+(Pending) Tj
+ET
+0.96 g
+0.78 G
+0. w
+0.96 g
+394.3307086614173613 468.7095275590550045 99.2125984251968589 -27.3578740157480311 re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.314 g
+402.8346456692913762 452.5555905511810693 Td
+(18 Nov 2026) Tj
+ET
+0.96 g
+0.78 G
+0. w
+0.96 g
+493.5433070866142202 468.7095275590550045 127.5590551181102512 -27.3578740157480311 re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.314 g
+502.0472440944882351 452.5555905511810693 Td
+(test devansh) Tj
+ET
+0.96 g
+0.78 G
+0. w
+0.96 g
+621.1023622047244999 468.7095275590550045 127.5590551181102512 -27.3578740157480311 re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.314 g
+629.6062992125985147 452.5555905511810693 Td
+(Admin User) Tj
+ET
+0. G
+0.5670000000000001 w
+0.78 G
+0. w
+0. G
+0.5670000000000001 w
+0. G
+0.5670000000000001 w
+endstream
+endobj
+1 0 obj
+<</Type /Pages
+/Kids [3 0 R ]
+/Count 1
+>>
+endobj
+5 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+6 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+7 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+8 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+9 0 obj
+<<
+/Type /Font
+/BaseFont /Courier
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+10 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+11 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+12 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+13 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Roman
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+14 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+15 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Italic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+16 0 obj
+<<
+/Type /Font
+/BaseFont /Times-BoldItalic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+17 0 obj
+<<
+/Type /Font
+/BaseFont /ZapfDingbats
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+18 0 obj
+<<
+/Type /Font
+/BaseFont /Symbol
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+2 0 obj
+<<
+/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]
+/Font <<
+/F1 5 0 R
+/F2 6 0 R
+/F3 7 0 R
+/F4 8 0 R
+/F5 9 0 R
+/F6 10 0 R
+/F7 11 0 R
+/F8 12 0 R
+/F9 13 0 R
+/F10 14 0 R
+/F11 15 0 R
+/F12 16 0 R
+/F13 17 0 R
+/F14 18 0 R
+>>
+/XObject <<
+>>
+>>
+endobj
+19 0 obj
+<<
+/Producer (jsPDF 4.2.1)
+/CreationDate (D:20260825155830+05'30')
+>>
+endobj
+20 0 obj
+<<
+/Type /Catalog
+/Pages 1 0 R
+/OpenAction [3 0 R /FitH null]
+/PageLayout /OneColumn
+>>
+endobj
+xref
+0 21
+0000000000 65535 f 
+0000003450 00000 n 
+0000005267 00000 n 
+0000000015 00000 n 
+0000000152 00000 n 
+0000003507 00000 n 
+0000003632 00000 n 
+0000003762 00000 n 
+0000003895 00000 n 
+0000004032 00000 n 
+0000004155 00000 n 
+0000004284 00000 n 
+0000004416 00000 n 
+0000004552 00000 n 
+0000004680 00000 n 
+0000004807 00000 n 
+0000004936 00000 n 
+0000005069 00000 n 
+0000005171 00000 n 
+0000005515 00000 n 
+0000005601 00000 n 
+trailer
+<<
+/Size 21
+/Root 20 0 R
+/Info 19 0 R
+/ID [ <43CC0E537E3D8411EE609E7B276315CC> <43CC0E537E3D8411EE609E7B276315CC> ]
+>>
+startxref
+5705
+%%EOF

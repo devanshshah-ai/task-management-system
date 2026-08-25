@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
-import { getTasks, updateTask, deleteTask } from "../api/taskApi";
+import { updateTask, deleteTask } from "../api/taskApi";
 import { fetchTasks, updateTaskInStore } from "../store/taskSlice";
+
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 import "./Tasks.css";
 
@@ -36,6 +41,8 @@ const initialEditForm = {
 
 const Tasks = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
+
   const { user } = useAuth();
 
   const {
@@ -530,6 +537,179 @@ const Tasks = () => {
     return dateA - dateB;
   });
 
+  // =====================================================
+  // CREATE TASK
+  // =====================================================
+
+  const handleCreateTask = () => {
+    navigate("/tasks/create");
+  };
+
+  // =====================================================
+  // EXPORT EXCEL
+  // =====================================================
+
+  const handleExportExcel = () => {
+    if (!sortedTasks.length) {
+      setLocalError("There are no tasks available to export.");
+      return;
+    }
+
+    try {
+      const exportData = sortedTasks.map((task) => ({
+        Title: task.title || "",
+        Description: task.description || "",
+        Priority: formatPriority(task.priority),
+        Status: formatStatus(getDisplayStatus(task)),
+        "Due Date": formatDateTime(task.dueDate),
+        "Assigned To": task.assignedTo?.name || "Self",
+        "Assigned Email": task.assignedTo?.email || "",
+        "Created By": task.createdBy?.name || "Unknown",
+        "Created At": formatDateTime(task.createdAt),
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+      worksheet["!cols"] = [
+        { wch: 30 },
+        { wch: 45 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 22 },
+        { wch: 22 },
+        { wch: 30 },
+        { wch: 22 },
+        { wch: 22 },
+      ];
+
+      const workbook = XLSX.utils.book_new();
+
+      XLSX.utils.book_append_sheet(
+        workbook,
+        worksheet,
+        "Tasks"
+      );
+
+      XLSX.writeFile(
+        workbook,
+        `task-management-${new Date()
+          .toISOString()
+          .slice(0, 10)}.xlsx`
+      );
+    } catch (err) {
+      console.error("Excel export error:", err);
+
+      setLocalError(
+        "Unable to export tasks to Excel."
+      );
+    }
+  };
+
+  // =====================================================
+  // EXPORT PDF
+  // =====================================================
+
+  const handleExportPDF = () => {
+    if (!sortedTasks.length) {
+      setLocalError("There are no tasks available to export.");
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      doc.setFontSize(18);
+      doc.text("Task Management System", 14, 15);
+
+      doc.setFontSize(11);
+      doc.text(
+        `Task Report - ${new Date().toLocaleDateString(
+          "en-GB"
+        )}`,
+        14,
+        22
+      );
+
+      doc.text(
+        `Total Tasks: ${sortedTasks.length}`,
+        14,
+        29
+      );
+
+      const tableData = sortedTasks.map((task) => [
+        task.title || "",
+        formatPriority(task.priority),
+        formatStatus(getDisplayStatus(task)),
+        formatDate(task.dueDate),
+        task.assignedTo?.name || "Self",
+        task.createdBy?.name || "Unknown",
+      ]);
+
+      autoTable(doc, {
+        startY: 35,
+
+        head: [
+          [
+            "Title",
+            "Priority",
+            "Status",
+            "Due Date",
+            "Assigned To",
+            "Created By",
+          ],
+        ],
+
+        body: tableData,
+
+        styles: {
+          fontSize: 9,
+          cellPadding: 3,
+        },
+
+        headStyles: {
+          fontSize: 9,
+        },
+
+        columnStyles: {
+          0: {
+            cellWidth: 70,
+          },
+          1: {
+            cellWidth: 25,
+          },
+          2: {
+            cellWidth: 30,
+          },
+          3: {
+            cellWidth: 35,
+          },
+          4: {
+            cellWidth: 45,
+          },
+          5: {
+            cellWidth: 45,
+          },
+        },
+      });
+
+      doc.save(
+        `task-management-${new Date()
+          .toISOString()
+          .slice(0, 10)}.pdf`
+      );
+    } catch (err) {
+      console.error("PDF export error:", err);
+
+      setLocalError(
+        "Unable to export tasks to PDF."
+      );
+    }
+  };
+
   // =========================
   // VIEW MODAL
   // =========================
@@ -703,7 +883,9 @@ const Tasks = () => {
       ========================= */}
 
       <section className="task-page-header">
+
         <div className="task-page-heading">
+
           <span className="task-eyebrow">
             Task Management
           </span>
@@ -714,7 +896,43 @@ const Tasks = () => {
             View, manage and keep track of all
             your tasks.
           </p>
+
         </div>
+
+        {/* =========================
+            HEADER ACTIONS
+        ========================= */}
+
+        <div className="task-page-header-actions">
+
+          <button
+            type="button"
+            className="task-create-button"
+            onClick={handleCreateTask}
+          >
+            + Create Task
+          </button>
+
+          <button
+            type="button"
+            className="task-export-button"
+            onClick={handleExportExcel}
+            disabled={loading || tasks.length === 0}
+          >
+            Export Excel
+          </button>
+
+          <button
+            type="button"
+            className="task-export-button"
+            onClick={handleExportPDF}
+            disabled={loading || tasks.length === 0}
+          >
+            Export PDF
+          </button>
+
+        </div>
+
       </section>
 
       {/* =========================
@@ -723,7 +941,10 @@ const Tasks = () => {
 
       {displayError && (
         <div className="task-error">
-          <span>{displayError}</span>
+
+          <span>
+            {displayError}
+          </span>
 
           <button
             type="button"
@@ -731,6 +952,7 @@ const Tasks = () => {
           >
             ×
           </button>
+
         </div>
       )}
 
@@ -741,8 +963,12 @@ const Tasks = () => {
       <section className="task-list-section">
 
         <div className="task-list-header">
+
           <div>
-            <h2>Tasks</h2>
+
+            <h2>
+              Tasks
+            </h2>
 
             <p>
               {pagination.totalTasks || 0}{" "}
@@ -751,12 +977,16 @@ const Tasks = () => {
                 : "tasks"}{" "}
               available
             </p>
+
           </div>
 
           <span className="task-page-indicator">
+
             Page {pagination.currentPage || 1} of{" "}
             {pagination.totalPages || 1}
+
           </span>
+
         </div>
 
         {/* =========================
@@ -768,6 +998,7 @@ const Tasks = () => {
           <div className="task-filter-top">
 
             <div className="task-search">
+
               <span className="task-search-icon">
                 ⌕
               </span>
@@ -790,9 +1021,11 @@ const Tasks = () => {
                   ×
                 </button>
               )}
+
             </div>
 
             <div className="task-filter-actions">
+
               <button
                 type="button"
                 className="task-filter-apply"
@@ -808,6 +1041,7 @@ const Tasks = () => {
               >
                 Clear
               </button>
+
             </div>
 
           </div>
@@ -815,6 +1049,7 @@ const Tasks = () => {
           <div className="task-filter-controls">
 
             <div className="task-filter-group">
+
               <label htmlFor="task-status">
                 Status
               </label>
@@ -833,9 +1068,11 @@ const Tasks = () => {
                   </option>
                 ))}
               </select>
+
             </div>
 
             <div className="task-filter-group">
+
               <label htmlFor="task-priority">
                 Priority
               </label>
@@ -854,9 +1091,11 @@ const Tasks = () => {
                   </option>
                 ))}
               </select>
+
             </div>
 
             <div className="task-filter-group">
+
               <label htmlFor="task-due-date">
                 Due Date
               </label>
@@ -875,6 +1114,7 @@ const Tasks = () => {
                   </option>
                 ))}
               </select>
+
             </div>
 
           </div>
@@ -883,6 +1123,7 @@ const Tasks = () => {
             appliedFilters.status !== "all" ||
             appliedFilters.priority !== "all" ||
             appliedFilters.sortOrder !== "asc") && (
+
             <div className="task-filter-summary">
 
               <span>
@@ -920,6 +1161,7 @@ const Tasks = () => {
               )}
 
             </div>
+
           )}
 
         </div>
@@ -930,11 +1172,13 @@ const Tasks = () => {
 
         {loading && (
           <div className="task-loading">
+
             <div className="task-loading-spinner" />
 
             <p>
               Loading tasks...
             </p>
+
           </div>
         )}
 
@@ -968,6 +1212,7 @@ const Tasks = () => {
             {(appliedFilters.search ||
               appliedFilters.status !== "all" ||
               appliedFilters.priority !== "all") && (
+
               <button
                 type="button"
                 className="task-empty-button"
@@ -975,6 +1220,7 @@ const Tasks = () => {
               >
                 Clear Filters
               </button>
+
             )}
 
           </div>
@@ -988,6 +1234,7 @@ const Tasks = () => {
           <div className="task-list">
 
             {sortedTasks.map((task) => {
+
               const canManage =
                 canManageTask(task);
 
@@ -1091,6 +1338,7 @@ const Tasks = () => {
                   <div className="task-card-meta">
 
                     <div className="task-meta-item">
+
                       <span className="task-meta-label">
                         Status
                       </span>
@@ -1102,9 +1350,11 @@ const Tasks = () => {
                           displayStatus
                         )}
                       </span>
+
                     </div>
 
                     <div className="task-meta-item">
+
                       <span className="task-meta-label">
                         Due
                       </span>
@@ -1118,9 +1368,11 @@ const Tasks = () => {
                       >
                         {formatDate(task.dueDate)}
                       </strong>
+
                     </div>
 
                     <div className="task-meta-item">
+
                       <span className="task-meta-label">
                         Assigned To
                       </span>
@@ -1129,9 +1381,11 @@ const Tasks = () => {
                         {task.assignedTo?.name ||
                           "Self"}
                       </strong>
+
                     </div>
 
                     <div className="task-meta-item">
+
                       <span className="task-meta-label">
                         Created By
                       </span>
@@ -1140,6 +1394,7 @@ const Tasks = () => {
                         {task.createdBy?.name ||
                           "Unknown"}
                       </strong>
+
                     </div>
 
                   </div>
@@ -1157,6 +1412,7 @@ const Tasks = () => {
 
         {!loading &&
           pagination.totalPages > 1 && (
+
             <div className="task-pagination">
 
               <button
@@ -1181,6 +1437,7 @@ const Tasks = () => {
                   },
                   (_, index) => index + 1
                 ).map((page) => (
+
                   <button
                     type="button"
                     key={page}
@@ -1196,6 +1453,7 @@ const Tasks = () => {
                   >
                     {page}
                   </button>
+
                 ))}
 
               </div>
@@ -1215,6 +1473,7 @@ const Tasks = () => {
               </button>
 
             </div>
+
           )}
 
       </section>
@@ -1224,10 +1483,12 @@ const Tasks = () => {
       ================================================= */}
 
       {showDetails && selectedTask && (
+
         <div
           className="task-modal-overlay"
           onClick={closeDetails}
         >
+
           <div
             className="task-modal task-details-modal"
             onClick={(event) =>
@@ -1306,6 +1567,7 @@ const Tasks = () => {
               <div className="task-modal-grid">
 
                 <div className="task-detail-box">
+
                   <span>
                     Due Date
                   </span>
@@ -1315,9 +1577,11 @@ const Tasks = () => {
                       selectedTask.dueDate
                     )}
                   </strong>
+
                 </div>
 
                 <div className="task-detail-box">
+
                   <span>
                     Assigned To
                   </span>
@@ -1334,9 +1598,11 @@ const Tasks = () => {
                       }
                     </small>
                   )}
+
                 </div>
 
                 <div className="task-detail-box">
+
                   <span>
                     Created By
                   </span>
@@ -1353,9 +1619,11 @@ const Tasks = () => {
                       }
                     </small>
                   )}
+
                 </div>
 
                 <div className="task-detail-box">
+
                   <span>
                     Created At
                   </span>
@@ -1365,6 +1633,7 @@ const Tasks = () => {
                       selectedTask.createdAt
                     )}
                   </strong>
+
                 </div>
 
               </div>
@@ -1396,7 +1665,9 @@ const Tasks = () => {
             </div>
 
           </div>
+
         </div>
+
       )}
 
       {/* =================================================
@@ -1404,10 +1675,12 @@ const Tasks = () => {
       ================================================= */}
 
       {showEditModal && editingTask && (
+
         <div
           className="task-modal-overlay"
           onClick={closeEditModal}
         >
+
           <div
             className="task-modal task-edit-modal"
             onClick={(event) =>
@@ -1543,6 +1816,7 @@ const Tasks = () => {
                     <option value="completed">
                       Completed
                     </option>
+
                   </select>
 
                 </div>
@@ -1592,7 +1866,9 @@ const Tasks = () => {
             </form>
 
           </div>
+
         </div>
+
       )}
 
     </main>
