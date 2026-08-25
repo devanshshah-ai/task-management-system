@@ -1902,3 +1902,82 @@
     animation: none;
   }
 }
+.task-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.task-export-button {
+  border: 1px solid #d9dee7;
+  background: #ffffff;
+  color: #263244;
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.task-export-button:hover {
+  transform: translateY(-1px);
+  border-color: #b8c0cc;
+  background: #f8fafc;
+}
+
+.task-export-excel {
+  color: #16794c;
+}
+
+.task-export-pdf {
+  color: #c0392b;
+}
+
+@media (max-width: 900px) {
+  .task-header-actions {
+    flex-wrap: wrap;
+  }
+}
+span.task-action-icon {
+  margin-right: 5px;
+}
+/* =================================
+   DELETE TASK BUTTON
+================================= */
+
+.task-action-delete {
+  color: #dc2626;
+  background: #ffffff;
+  border: 1px solid #fecaca;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.15s ease;
+}
+
+.task-action-delete:hover:not(:disabled) {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fca5a5;
+  transform: translateY(-1px);
+}
+
+.task-action-delete:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.task-action-delete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.task-action-delete .task-action-icon {
+  color: #dc2626;
+  font-size: 15px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+} 

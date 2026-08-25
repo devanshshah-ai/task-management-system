@@ -19,7 +19,7 @@ router.use(protect);
 // Admin only
 router.post(
   "/",
-  authorize("admin"),
+  authorize("admin", "user"),
   createTask
 );
 
@@ -33,7 +33,7 @@ router.get(
 // Admin only
 router.get(
   "/stats",
-  authorize("admin"),
+  authorize("admin", "user"),
   getTaskStats
 );
 

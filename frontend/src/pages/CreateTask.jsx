@@ -29,8 +29,20 @@ const CreateTask = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // ============================================================
+  // LOAD USERS
+  // Only admins need the user list because only admins can
+  // choose who the task is assigned to.
+  // ============================================================
+
   useEffect(() => {
     const loadUsers = async () => {
+      // Normal users don't need to load the users list.
+      if (user?.role !== "admin") {
+        setLoadingUsers(false);
+        return;
+      }
+
       try {
         setLoadingUsers(true);
         setError("");
@@ -49,7 +61,8 @@ const CreateTask = () => {
         console.error("Unable to load users:", error);
 
         setError(
-          error?.message ||
+          error?.response?.data?.message ||
+            error?.message ||
             "Unable to load users."
         );
       } finally {
@@ -58,7 +71,11 @@ const CreateTask = () => {
     };
 
     loadUsers();
-  }, []);
+  }, [user]);
+
+  // ============================================================
+  // HANDLE FORM CHANGE
+  // ============================================================
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -77,11 +94,19 @@ const CreateTask = () => {
     }
   };
 
+  // ============================================================
+  // HANDLE SUBMIT
+  // ============================================================
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
     setError("");
     setSuccess("");
+
+    // ------------------------------------------
+    // Title validation
+    // ------------------------------------------
 
     if (!form.title.trim()) {
       setError("Task title is required.");
@@ -95,18 +120,52 @@ const CreateTask = () => {
       return;
     }
 
+    // ------------------------------------------
+    // Due date validation
+    // ------------------------------------------
+
     if (!form.dueDate) {
       setError("Due date is required.");
       return;
     }
 
-    if (!form.assignedTo) {
+    // ------------------------------------------
+    // Assignment validation
+    //
+    // Admin:
+    //     Must select a user.
+    //
+    // Normal user:
+    //     Automatically assigned to themselves.
+    // ------------------------------------------
+
+    if (user?.role === "admin" && !form.assignedTo) {
       setError("Please assign the task to a user.");
+      return;
+    }
+
+    if (!user?._id && !user?.id) {
+      setError("Unable to identify the logged-in user.");
       return;
     }
 
     try {
       setCreating(true);
+
+      // ------------------------------------------
+      // Determine assigned user
+      // ------------------------------------------
+
+      const loggedInUserId = user?._id || user?.id;
+
+      const assignedUserId =
+        user?.role === "admin"
+          ? form.assignedTo
+          : loggedInUserId;
+
+      // ------------------------------------------
+      // Create task
+      // ------------------------------------------
 
       await createTask({
         title: form.title.trim(),
@@ -114,7 +173,7 @@ const CreateTask = () => {
         priority: form.priority,
         status: form.status,
         dueDate: new Date(form.dueDate).toISOString(),
-        assignedTo: form.assignedTo,
+        assignedTo: assignedUserId,
       });
 
       setSuccess("Task created successfully.");
@@ -126,8 +185,9 @@ const CreateTask = () => {
       console.error("Create task error:", error);
 
       const backendErrors =
-        error?.data?.errors ||
-        error?.response?.data?.data?.errors;
+        error?.response?.data?.data?.errors ||
+        error?.response?.data?.errors ||
+        error?.data?.errors;
 
       if (Array.isArray(backendErrors)) {
         setError(
@@ -137,7 +197,8 @@ const CreateTask = () => {
         );
       } else {
         setError(
-          error?.message ||
+          error?.response?.data?.message ||
+            error?.message ||
             "Unable to create task."
         );
       }
@@ -146,6 +207,10 @@ const CreateTask = () => {
     }
   };
 
+  // ============================================================
+  // CANCEL
+  // ============================================================
+
   const handleCancel = () => {
     if (creating) {
       return;
@@ -153,6 +218,10 @@ const CreateTask = () => {
 
     navigate("/tasks");
   };
+
+  // ============================================================
+  // RENDER
+  // ============================================================
 
   return (
     <main className="create-task-page">
@@ -228,145 +297,235 @@ const CreateTask = () => {
             Form
         ========================= */}
 
-        <form className="create-task-form" onSubmit={handleSubmit}>
-            {/* Full width - Title */}
-            <div className="create-task-field full-width">
-                <label htmlFor="title">Task Title</label>
+        <form
+          className="create-task-form"
+          onSubmit={handleSubmit}
+        >
 
-                <input
-                id="title"
-                name="title"
-                type="text"
-                value={form.title}
+          {/* =========================
+              Title
+          ========================= */}
+
+          <div className="create-task-field full-width">
+
+            <label htmlFor="title">
+              Task Title
+            </label>
+
+            <input
+              id="title"
+              name="title"
+              type="text"
+              value={form.title}
+              onChange={handleChange}
+              placeholder="Enter task title"
+              maxLength={100}
+              required
+            />
+
+          </div>
+
+          {/* =========================
+              Description
+          ========================= */}
+
+          <div className="create-task-field full-width">
+
+            <label htmlFor="description">
+              Description
+            </label>
+
+            <textarea
+              id="description"
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+              placeholder="Describe the task..."
+              maxLength={1000}
+              rows={4}
+            />
+
+            <span className="create-task-hint">
+              {form.description.length}/1000
+            </span>
+
+          </div>
+
+          {/* =========================
+              Two Column Fields
+          ========================= */}
+
+          <div className="create-task-form-grid">
+
+            {/* Priority */}
+
+            <div className="create-task-field">
+
+              <label htmlFor="priority">
+                Priority
+              </label>
+
+              <select
+                id="priority"
+                name="priority"
+                value={form.priority}
                 onChange={handleChange}
-                placeholder="Enter task title"
-                maxLength={100}
+              >
+                <option value="high">
+                  High
+                </option>
+
+                <option value="medium">
+                  Medium
+                </option>
+
+                <option value="low">
+                  Low
+                </option>
+              </select>
+
+            </div>
+
+            {/* Status */}
+
+            <div className="create-task-field">
+
+              <label htmlFor="status">
+                Status
+              </label>
+
+              <select
+                id="status"
+                name="status"
+                value={form.status}
+                onChange={handleChange}
+              >
+                <option value="pending">
+                  Pending
+                </option>
+
+                <option value="in_progress">
+                  In Progress
+                </option>
+
+                <option value="completed">
+                  Completed
+                </option>
+              </select>
+
+            </div>
+
+            {/* Due Date */}
+
+            <div className="create-task-field">
+
+              <label htmlFor="dueDate">
+                Due Date
+              </label>
+
+              <input
+                id="dueDate"
+                name="dueDate"
+                type="datetime-local"
+                value={form.dueDate}
+                onChange={handleChange}
                 required
-                />
+              />
+
             </div>
 
-            {/* Full width - Description */}
-            <div className="create-task-field full-width">
-                <label htmlFor="description">Description</label>
+            {/* =================================================
+                ASSIGN TO
 
-                <textarea
-                id="description"
-                name="description"
-                value={form.description}
-                onChange={handleChange}
-                placeholder="Describe the task..."
-                maxLength={1000}
-                rows={4}
-                />
+                ONLY ADMIN CAN SEE THIS FIELD.
 
-                <span className="create-task-hint">
-                {form.description.length}/1000
-                </span>
-            </div>
+                Normal user:
+                - Field is hidden.
+                - Backend/frontend automatically assigns
+                  task to logged-in user.
+               ================================================= */}
 
-            {/* Two-column fields */}
-            <div className="create-task-form-grid">
+            {user?.role === "admin" && (
+              <div className="create-task-field">
 
-                {/* Priority */}
-                <div className="create-task-field">
-                <label htmlFor="priority">Priority</label>
+                <label htmlFor="assignedTo">
+                  Assign To
+                </label>
 
                 <select
-                    id="priority"
-                    name="priority"
-                    value={form.priority}
-                    onChange={handleChange}
+                  id="assignedTo"
+                  name="assignedTo"
+                  value={form.assignedTo}
+                  onChange={handleChange}
+                  disabled={loadingUsers}
+                  required
                 >
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                </select>
-                </div>
 
-                {/* Status */}
-                <div className="create-task-field">
-                <label htmlFor="status">Status</label>
-
-                <select
-                    id="status"
-                    name="status"
-                    value={form.status}
-                    onChange={handleChange}
-                >
-                    <option value="pending">Pending</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                </select>
-                </div>
-
-                {/* Due Date */}
-                <div className="create-task-field">
-                <label htmlFor="dueDate">Due Date</label>
-
-                <input
-                    id="dueDate"
-                    name="dueDate"
-                    type="datetime-local"
-                    value={form.dueDate}
-                    onChange={handleChange}
-                    required
-                />
-                </div>
-
-                {/* Assign To */}
-                <div className="create-task-field">
-                <label htmlFor="assignedTo">Assign To</label>
-
-                <select
-                    id="assignedTo"
-                    name="assignedTo"
-                    value={form.assignedTo}
-                    onChange={handleChange}
-                    disabled={loadingUsers}
-                    required
-                >
-                    <option value="">
+                  <option value="">
                     {loadingUsers
-                        ? "Loading users..."
-                        : "Select user"}
-                    </option>
+                      ? "Loading users..."
+                      : "Select user"}
+                  </option>
 
-                    {users.map((item) => (
+                  {users.map((item) => (
                     <option
-                        key={item._id}
-                        value={item._id}
+                      key={item._id}
+                      value={item._id}
                     >
-                        {item.name}
+                      {item.name}
                     </option>
-                    ))}
+                  ))}
+
                 </select>
-                </div>
 
+              </div>
+            )}
+
+          </div>
+
+          {/* =================================================
+              Normal User Info
+
+              This is optional UI information. It makes it
+              clear that the task will be assigned to them.
+             ================================================= */}
+
+          {user?.role === "user" && (
+            <div className="create-task-assignment-info">
+              This task will be assigned to you.
             </div>
+          )}
 
-            {/* Actions */}
-            <div className="create-task-actions">
+          {/* =========================
+              Actions
+          ========================= */}
 
-                <button
-                type="button"
-                className="create-task-cancel"
-                onClick={handleCancel}
-                disabled={creating}
-                >
-                Cancel
-                </button>
+          <div className="create-task-actions">
 
-                <button
-                type="submit"
-                className="create-task-submit"
-                disabled={creating || loadingUsers}
-                >
-                {creating
-                    ? "Creating..."
-                    : "Create Task"}
-                </button>
+            <button
+              type="button"
+              className="create-task-cancel"
+              onClick={handleCancel}
+              disabled={creating}
+            >
+              Cancel
+            </button>
 
-            </div>
+            <button
+              type="submit"
+              className="create-task-submit"
+              disabled={
+                creating ||
+                (user?.role === "admin" && loadingUsers)
+              }
+            >
+              {creating
+                ? "Creating..."
+                : "Create Task"}
+            </button>
+
+          </div>
+
         </form>
 
       </section>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   getUsers,
+  createUser,
   deleteUser,
   resetUserPassword,
 } from "../api/userApi";
@@ -21,6 +22,10 @@ const Users = () => {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
 
+  // ==========================================
+  // CREATE USER STATE
+  // ==========================================
+
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const [createForm, setCreateForm] = useState({
@@ -29,6 +34,9 @@ const Users = () => {
     password: "",
     role: "user",
   });
+
+  const [createError, setCreateError] = useState("");
+  const [creating, setCreating] = useState(false);
 
   // ==========================================
   // RESET PASSWORD STATE
@@ -63,7 +71,9 @@ const Users = () => {
       console.error("Unable to load users:", error);
 
       setError(
-        error?.message ||
+        error?.response?.data?.message ||
+          error?.data?.message ||
+          error?.message ||
           "Unable to load users."
       );
     } finally {
@@ -80,16 +90,12 @@ const Users = () => {
   // ==========================================
 
   const filteredUsers = useMemo(() => {
-    const searchValue = search
-      .trim()
-      .toLowerCase();
+    const searchValue = search.trim().toLowerCase();
 
     return users.filter((user) => {
       const matchesSearch =
         !searchValue ||
-        user.name
-          ?.toLowerCase()
-          .includes(searchValue);
+        user.name?.toLowerCase().includes(searchValue);
 
       const matchesRole =
         roleFilter === "all" ||
@@ -112,7 +118,7 @@ const Users = () => {
   ).length;
 
   // ==========================================
-  // CREATE FORM
+  // CREATE USER
   // ==========================================
 
   const handleCreateChange = (event) => {
@@ -122,9 +128,18 @@ const Users = () => {
       ...previous,
       [name]: value,
     }));
+
+    // Clear modal error as soon as user starts fixing it
+    if (createError) {
+      setCreateError("");
+    }
   };
 
   const closeCreateModal = () => {
+    if (creating) {
+      return;
+    }
+
     setShowCreateModal(false);
 
     setCreateForm({
@@ -133,20 +148,129 @@ const Users = () => {
       password: "",
       role: "user",
     });
+
+    setCreateError("");
   };
 
-  const handleCreateSubmit = (event) => {
+  const openCreateModal = () => {
+    setCreateError("");
+
+    setCreateForm({
+      name: "",
+      email: "",
+      password: "",
+      role: "user",
+    });
+
+    setShowCreateModal(true);
+  };
+
+  const handleCreateSubmit = async (event) => {
     event.preventDefault();
 
-    /*
-      Keep your existing create-user API logic here.
-    */
+    setCreateError("");
+    setError("");
 
-    console.log("Create user:", createForm);
+    const name = createForm.name.trim();
+    const email = createForm.email.trim();
+    const password = createForm.password;
+    const role = createForm.role;
 
-    closeCreateModal();
+    // ==========================================
+    // FRONTEND VALIDATION
+    // ==========================================
 
-    loadUsers();
+    if (!name) {
+      setCreateError("Please enter the user's full name.");
+      return;
+    }
+
+    if (!email) {
+      setCreateError("Please enter the user's email.");
+      return;
+    }
+
+    if (!password) {
+      setCreateError("Please enter a password.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setCreateError(
+        "Password must be at least 6 characters long."
+      );
+      return;
+    }
+
+    try {
+      setCreating(true);
+
+      console.log("Create user form submitted");
+
+      console.log("Create user data:", {
+        name,
+        email,
+        role,
+      });
+
+      const response = await createUser({
+        name,
+        email,
+        password,
+        role,
+      });
+
+      console.log(
+        "User created successfully:",
+        response
+      );
+
+      // Reload users first
+      await loadUsers();
+
+      // Close only after successful creation
+      closeCreateModal();
+
+      alert(
+        `${name} has been created successfully.`
+      );
+    } catch (error) {
+      console.error("Create user error:", error);
+
+      // ==========================================
+      // BACKEND ERROR HANDLING
+      // ==========================================
+
+      const backendErrors =
+        error?.response?.data?.data?.errors ||
+        error?.response?.data?.errors ||
+        error?.data?.errors;
+
+      if (Array.isArray(backendErrors)) {
+        const errorMessage = backendErrors
+          .map((item) => item?.message)
+          .filter(Boolean)
+          .join(" ");
+
+        setCreateError(
+          errorMessage ||
+            "Unable to create user."
+        );
+      } else {
+        const backendMessage =
+          error?.response?.data?.message ||
+          error?.response?.data?.data?.message ||
+          error?.data?.message ||
+          error?.message;
+
+        setCreateError(
+          backendMessage ||
+            "Unable to create user. Please try again."
+        );
+      }
+    } finally {
+      setCreating(false);
+    }
   };
 
   // ==========================================
@@ -220,7 +344,9 @@ const Users = () => {
         );
       } else {
         setError(
-          error?.message ||
+          error?.response?.data?.message ||
+            error?.data?.message ||
+            error?.message ||
             "Unable to reset password."
         );
       }
@@ -275,7 +401,9 @@ const Users = () => {
       );
 
       setError(
-        error?.message ||
+        error?.response?.data?.message ||
+          error?.data?.message ||
+          error?.message ||
           "Unable to delete user."
       );
     } finally {
@@ -335,9 +463,7 @@ const Users = () => {
         <button
           type="button"
           className="users-create-button"
-          onClick={() =>
-            setShowCreateModal(true)
-          }
+          onClick={openCreateModal}
         >
           <span className="users-create-icon">
             +
@@ -415,7 +541,7 @@ const Users = () => {
 
 
       {/* ==========================================
-          ERROR
+          PAGE ERROR
       ========================================== */}
 
       {error && (
@@ -714,6 +840,7 @@ const Users = () => {
 
                         </td>
 
+
                         {/* Actions */}
 
                         <td>
@@ -734,16 +861,16 @@ const Users = () => {
                             </button>
 
                             <button
-                            type="button"
-                            className="users-action-delete"
-                            onClick={() =>
+                              type="button"
+                              className="users-action-delete"
+                              onClick={() =>
                                 handleDeleteUser(
-                                user
+                                  user
                                 )
-                            }
-                            disabled={isDeleting}
+                              }
+                              disabled={isDeleting}
                             >
-                            {isDeleting
+                              {isDeleting
                                 ? "Deleting..."
                                 : "Delete"}
                             </button>
@@ -806,11 +933,37 @@ const Users = () => {
                 type="button"
                 className="users-modal-close"
                 onClick={closeCreateModal}
+                disabled={creating}
               >
                 ×
               </button>
 
             </div>
+
+
+            {/* ==========================================
+                CREATE ERROR INSIDE MODAL
+            ========================================== */}
+
+            {createError && (
+              <div className="users-modal-error">
+
+                <span className="users-modal-error-icon">
+                  !
+                </span>
+
+                <div>
+                  <strong>
+                    Unable to create user
+                  </strong>
+
+                  <p>
+                    {createError}
+                  </p>
+                </div>
+
+              </div>
+            )}
 
 
             <form
@@ -831,6 +984,7 @@ const Users = () => {
                   value={createForm.name}
                   onChange={handleCreateChange}
                   placeholder="Enter full name"
+                  disabled={creating}
                   required
                 />
 
@@ -850,6 +1004,7 @@ const Users = () => {
                   value={createForm.email}
                   onChange={handleCreateChange}
                   placeholder="Enter email address"
+                  disabled={creating}
                   required
                 />
 
@@ -871,8 +1026,15 @@ const Users = () => {
                     value={createForm.password}
                     onChange={handleCreateChange}
                     placeholder="Enter password"
+                    minLength={6}
+                    disabled={creating}
                     required
                   />
+
+                  <span className="users-form-hint">
+                    Password must be at least 6
+                    characters.
+                  </span>
 
                 </div>
 
@@ -888,6 +1050,7 @@ const Users = () => {
                     name="role"
                     value={createForm.role}
                     onChange={handleCreateChange}
+                    disabled={creating}
                   >
 
                     <option value="user">
@@ -911,6 +1074,7 @@ const Users = () => {
                   type="button"
                   className="users-cancel-button"
                   onClick={closeCreateModal}
+                  disabled={creating}
                 >
                   Cancel
                 </button>
@@ -918,11 +1082,15 @@ const Users = () => {
                 <button
                   type="submit"
                   className="users-submit-button"
+                  disabled={creating}
                 >
-                  Create{" "}
-                  {createForm.role === "admin"
-                    ? "Administrator"
-                    : "User"}
+                  {creating
+                    ? "Creating..."
+                    : `Create ${
+                        createForm.role === "admin"
+                          ? "Administrator"
+                          : "User"
+                      }`}
                 </button>
 
               </div>
@@ -1018,6 +1186,7 @@ const Users = () => {
                     minLength={6}
                     required
                     autoFocus
+                    disabled={resetting}
                   />
 
                   <span className="users-form-hint">

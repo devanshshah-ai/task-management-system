@@ -13,17 +13,31 @@ const {
   taskQuerySchema,
 } = require("../validators/taskQueryValidator");
 
-// CREATE TASK
+/* =========================================================
+   HELPER
+========================================================= */
+
+const getCurrentUserId = (req) => {
+  return req.user?.userId || req.user?._id || req.user?.id;
+};
+
+/* =========================================================
+   CREATE TASK
+========================================================= */
+
 const createTask = async (req, res) => {
   try {
-    const validationResult = createTaskSchema.safeParse(req.body);
+    const validationResult =
+      createTaskSchema.safeParse(req.body);
 
     if (!validationResult.success) {
       throw new AppError("Validation failed", 400, {
-        errors: validationResult.error.issues.map((issue) => ({
-          field: issue.path[0],
-          message: issue.message,
-        })),
+        errors: validationResult.error.issues.map(
+          (issue) => ({
+            field: issue.path[0],
+            message: issue.message,
+          })
+        ),
       });
     }
 
@@ -36,20 +50,34 @@ const createTask = async (req, res) => {
       assignedTo,
     } = validationResult.data;
 
-    // Check assigned user exists
-    const assignedUser = await User.findById(assignedTo);
+    /* =========================================
+       CHECK ASSIGNED USER
+    ========================================= */
+
+    const assignedUser =
+      await User.findById(assignedTo);
 
     if (!assignedUser) {
-      throw new AppError("Assigned user not found", 404);
+      throw new AppError(
+        "Assigned user not found",
+        404
+      );
     }
 
-    // Tasks can only be assigned to normal users
+    /* =========================================
+       ONLY NORMAL USERS CAN BE ASSIGNED
+    ========================================= */
+
     if (assignedUser.role !== "user") {
       throw new AppError(
         "Tasks can only be assigned to users",
         400
       );
     }
+
+    /* =========================================
+       CREATE TASK
+    ========================================= */
 
     const task = await Task.create({
       title,
@@ -58,16 +86,28 @@ const createTask = async (req, res) => {
       status,
       dueDate,
       assignedTo,
-      createdBy: req.user.userId,
+      createdBy: getCurrentUserId(req),
     });
 
-    const populatedTask = await Task.findById(task._id)
-      .populate("assignedTo", "name email role")
-      .populate("createdBy", "name email role");
+    /* =========================================
+       POPULATE TASK
+    ========================================= */
+
+    const populatedTask =
+      await Task.findById(task._id)
+        .populate(
+          "assignedTo",
+          "name email role"
+        )
+        .populate(
+          "createdBy",
+          "name email role"
+        );
 
     return res.status(201).json({
       success: true,
       message: "Task created successfully",
+
       data: {
         task: populatedTask,
       },
@@ -77,7 +117,10 @@ const createTask = async (req, res) => {
   }
 };
 
-// GET ALL TASKS
+/* =========================================================
+   GET ALL TASKS
+========================================================= */
+
 const getTasks = async (req, res, next) => {
   try {
     const {
@@ -86,19 +129,78 @@ const getTasks = async (req, res, next) => {
       search = "",
       status,
       priority,
+      sortBy = "dueDate",
+      sortOrder = "asc",
     } = req.query;
 
-    const currentPage = Math.max(Number(page), 1);
-    const pageLimit = Math.max(Number(limit), 1);
-    const skip = (currentPage - 1) * pageLimit;
+    const currentPage = Math.max(
+      Number(page),
+      1
+    );
+
+    const pageLimit = Math.max(
+      Number(limit),
+      1
+    );
+
+    const skip =
+      (currentPage - 1) * pageLimit;
 
     /* =========================================
-       Build Match Query
+       CURRENT USER
     ========================================= */
 
-    const matchQuery = {};
+    const currentUserId =
+      getCurrentUserId(req);
 
-    // Search by title
+    /* =========================================
+       BUILD MATCH QUERY
+    ========================================= */
+
+    let matchQuery = {};
+
+    /* =========================================
+       USER TASK RESTRICTION
+       
+       ADMIN:
+       → Can see all tasks
+
+       NORMAL USER:
+       → Can only see tasks assigned to them
+    ========================================= */
+
+    if (req.user.role !== "admin") {
+      if (
+        !currentUserId ||
+        !mongoose.Types.ObjectId.isValid(
+          currentUserId
+        )
+      ) {
+        throw new AppError(
+          "Invalid user ID",
+          401
+        );
+      }
+
+      /*
+        IMPORTANT:
+
+        aggregate() does not automatically
+        convert a string into ObjectId.
+
+        Therefore we explicitly convert it.
+      */
+
+      matchQuery.assignedTo =
+        new mongoose.Types.ObjectId(
+          currentUserId
+        );
+    }
+
+    /* =========================================
+       SEARCH BY TITLE
+    ========================================= */
+
     if (search.trim()) {
       matchQuery.title = {
         $regex: search.trim(),
@@ -106,46 +208,83 @@ const getTasks = async (req, res, next) => {
       };
     }
 
-    // Filter by status
+    /* =========================================
+       FILTER BY STATUS
+    ========================================= */
+
     if (status) {
       matchQuery.status = status;
     }
 
-    // Filter by priority
+    /* =========================================
+       FILTER BY PRIORITY
+    ========================================= */
+
     if (priority) {
       matchQuery.priority = priority;
     }
 
     /* =========================================
-       Get Total Tasks
+       TOTAL TASKS
     ========================================= */
 
-    const totalTasks = await Task.countDocuments(matchQuery);
+    const totalTasks =
+      await Task.countDocuments(
+        matchQuery
+      );
 
     /* =========================================
-       Task Ordering
+       SORT CONFIGURATION
+    ========================================= */
 
-       Active tasks first
-       ↓
-       Pending / In Progress
-       ↓
-       Sorted by due date
+    const allowedSortFields = [
+      "dueDate",
+      "createdAt",
+      "title",
+      "priority",
+      "status",
+    ];
 
-       Completed tasks last
-       ↓
-       Sorted by due date
+    const safeSortBy =
+      allowedSortFields.includes(sortBy)
+        ? sortBy
+        : "dueDate";
+
+    const safeSortOrder =
+      sortOrder === "desc" ? -1 : 1;
+
+    /* =========================================
+       TASK AGGREGATION
     ========================================= */
 
     const tasks = await Task.aggregate([
+      /* =======================================
+         MATCH
+      ======================================= */
+
       {
         $match: matchQuery,
       },
+
+      /* =======================================
+         STATUS ORDER
+
+         Active tasks first
+         Pending / In Progress
+         
+         Completed tasks last
+      ======================================= */
 
       {
         $addFields: {
           statusOrder: {
             $cond: [
-              { $eq: ["$status", "completed"] },
+              {
+                $eq: [
+                  "$status",
+                  "completed",
+                ],
+              },
               1,
               0,
             ],
@@ -153,13 +292,24 @@ const getTasks = async (req, res, next) => {
         },
       },
 
+      /* =======================================
+         SORT
+      ======================================= */
+
       {
         $sort: {
           statusOrder: 1,
-          dueDate: 1,
+
+          [safeSortBy]:
+            safeSortOrder,
+
           createdAt: -1,
         },
       },
+
+      /* =======================================
+         PAGINATION
+      ======================================= */
 
       {
         $skip: skip,
@@ -169,15 +319,18 @@ const getTasks = async (req, res, next) => {
         $limit: pageLimit,
       },
 
-      /* =========================================
-         Populate assignedTo
-      ========================================= */
+      /* =======================================
+         POPULATE ASSIGNED USER
+      ======================================= */
 
       {
         $lookup: {
           from: "users",
+
           localField: "assignedTo",
+
           foreignField: "_id",
+
           as: "assignedTo",
         },
       },
@@ -185,19 +338,23 @@ const getTasks = async (req, res, next) => {
       {
         $unwind: {
           path: "$assignedTo",
+
           preserveNullAndEmptyArrays: true,
         },
       },
 
-      /* =========================================
-         Populate createdBy
-      ========================================= */
+      /* =======================================
+         POPULATE CREATED BY
+      ======================================= */
 
       {
         $lookup: {
           from: "users",
+
           localField: "createdBy",
+
           foreignField: "_id",
+
           as: "createdBy",
         },
       },
@@ -205,41 +362,52 @@ const getTasks = async (req, res, next) => {
       {
         $unwind: {
           path: "$createdBy",
+
           preserveNullAndEmptyArrays: true,
         },
       },
 
-      /* =========================================
-         Remove Internal statusOrder
-      ========================================= */
+      /* =======================================
+         REMOVE SENSITIVE / INTERNAL DATA
+      ======================================= */
 
       {
         $project: {
           statusOrder: 0,
 
           "assignedTo.password": 0,
+
           "createdBy.password": 0,
         },
       },
     ]);
 
     /* =========================================
-       Pagination
+       PAGINATION
     ========================================= */
 
-    const totalPages = Math.ceil(
-      totalTasks / pageLimit
-    );
+    const totalPages =
+      Math.ceil(
+        totalTasks / pageLimit
+      );
 
-    res.status(200).json({
+    /* =========================================
+       RESPONSE
+    ========================================= */
+
+    return res.status(200).json({
       success: true,
+
       data: {
         tasks,
 
         pagination: {
           currentPage,
+
           totalPages,
+
           totalTasks,
+
           limit: pageLimit,
 
           hasNextPage:
@@ -255,40 +423,79 @@ const getTasks = async (req, res, next) => {
   }
 };
 
-// GET TASK BY ID
+/* =========================================================
+   GET TASK BY ID
+========================================================= */
+
 const getTaskById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate MongoDB ObjectId
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      throw new AppError("Invalid task ID", 400);
-    }
-
-    const task = await Task.findById(id)
-      .populate("assignedTo", "name email role")
-      .populate("createdBy", "name email role");
-
-    if (!task) {
-      throw new AppError("Task not found", 404);
-    }
-
-    // =================================================
-    // USER TASK RESTRICTION
-    // =================================================
-    // Users cannot view another user's task.
+    /* =========================================
+       VALIDATE TASK ID
+    ========================================= */
 
     if (
-      req.user.role === "user" &&
-      task.assignedTo._id.toString() !== req.user.userId.toString()
+      !mongoose.Types.ObjectId.isValid(id)
     ) {
-      // Return 404 instead of 403 so we don't reveal
-      // that another user's task exists.
-      throw new AppError("Task not found", 404);
+      throw new AppError(
+        "Invalid task ID",
+        400
+      );
     }
+
+    /* =========================================
+       FIND TASK
+    ========================================= */
+
+    const task =
+      await Task.findById(id)
+        .populate(
+          "assignedTo",
+          "name email role"
+        )
+        .populate(
+          "createdBy",
+          "name email role"
+        );
+
+    if (!task) {
+      throw new AppError(
+        "Task not found",
+        404
+      );
+    }
+
+    /* =========================================
+       USER TASK RESTRICTION
+    ========================================= */
+
+    if (req.user.role === "user") {
+      const currentUserId =
+        getCurrentUserId(req);
+
+      const assignedUserId =
+        task.assignedTo?._id;
+
+      if (
+        !assignedUserId ||
+        String(assignedUserId) !==
+          String(currentUserId)
+      ) {
+        throw new AppError(
+          "Task not found",
+          404
+        );
+      }
+    }
+
+    /* =========================================
+       RESPONSE
+    ========================================= */
 
     return res.status(200).json({
       success: true,
+
       data: {
         task,
       },
@@ -298,45 +505,85 @@ const getTaskById = async (req, res) => {
   }
 };
 
-// UPDATE TASK
+/* =========================================================
+   UPDATE TASK
+========================================================= */
+
 const updateTask = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate MongoDB ObjectId
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      throw new AppError("Invalid task ID", 400);
+    /* =========================================
+       VALIDATE TASK ID
+    ========================================= */
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      throw new AppError(
+        "Invalid task ID",
+        400
+      );
     }
 
-    // Validate request body
-    const validationResult = updateTaskSchema.safeParse(req.body);
+    /* =========================================
+       VALIDATE REQUEST BODY
+    ========================================= */
+
+    const validationResult =
+      updateTaskSchema.safeParse(
+        req.body
+      );
 
     if (!validationResult.success) {
-      throw new AppError("Validation failed", 400, {
-        errors: validationResult.error.issues.map((issue) => ({
-          field: issue.path[0],
-          message: issue.message,
-        })),
-      });
+      throw new AppError(
+        "Validation failed",
+        400,
+        {
+          errors:
+            validationResult.error.issues.map(
+              (issue) => ({
+                field: issue.path[0],
+                message: issue.message,
+              })
+            ),
+        }
+      );
     }
 
-    const task = await Task.findById(id);
+    /* =========================================
+       FIND TASK
+    ========================================= */
+
+    const task =
+      await Task.findById(id);
 
     if (!task) {
-      throw new AppError("Task not found", 404);
+      throw new AppError(
+        "Task not found",
+        404
+      );
     }
 
-    // =================================================
-    // AUTHORIZATION
-    // =================================================
+    /* =========================================
+       AUTHORIZATION
+    ========================================= */
 
-    const isAdmin = req.user.role === "admin";
+    const isAdmin =
+      req.user.role === "admin";
+
+    const currentUserId =
+      getCurrentUserId(req);
 
     const isTaskOwner =
-      task.assignedTo.toString() === req.user.userId.toString();
+      task.assignedTo &&
+      String(task.assignedTo) ===
+        String(currentUserId);
 
-    // Admin can update any task.
-    // User can only update their assigned task.
+    /* =========================================
+       ADMIN OR TASK OWNER
+    ========================================= */
+
     if (!isAdmin && !isTaskOwner) {
       throw new AppError(
         "You are not authorized to update this task",
@@ -344,31 +591,47 @@ const updateTask = async (req, res) => {
       );
     }
 
-    const updateData = validationResult.data;
+    const updateData =
+      validationResult.data;
 
-    // =================================================
-    // REASSIGN TASK
-    // =================================================
+    /* =========================================
+       REASSIGN TASK
+    ========================================= */
 
     if (updateData.assignedTo) {
-      // Verify assigned user exists
-      const assignedUser = await User.findById(
-        updateData.assignedTo
-      );
+      /* =======================================
+         CHECK ASSIGNED USER
+      ======================================= */
+
+      const assignedUser =
+        await User.findById(
+          updateData.assignedTo
+        );
 
       if (!assignedUser) {
-        throw new AppError("Assigned user not found", 404);
+        throw new AppError(
+          "Assigned user not found",
+          404
+        );
       }
 
-      // Cannot assign tasks to admins
-      if (assignedUser.role !== "user") {
+      /* =======================================
+         ONLY NORMAL USERS
+      ======================================= */
+
+      if (
+        assignedUser.role !== "user"
+      ) {
         throw new AppError(
           "Tasks can only be assigned to users",
           400
         );
       }
 
-      // Only admins can reassign tasks
+      /* =======================================
+         ONLY ADMIN CAN REASSIGN
+      ======================================= */
+
       if (!isAdmin) {
         throw new AppError(
           "Only admins can reassign tasks",
@@ -377,20 +640,38 @@ const updateTask = async (req, res) => {
       }
     }
 
-    const updatedTask = await Task.findByIdAndUpdate(
-      id,
-      updateData,
-      {
-        new: true,
-        runValidators: true,
-      }
-    )
-      .populate("assignedTo", "name email role")
-      .populate("createdBy", "name email role");
+    /* =========================================
+       UPDATE
+    ========================================= */
+
+    const updatedTask =
+      await Task.findByIdAndUpdate(
+        id,
+        updateData,
+        {
+          new: true,
+          runValidators: true,
+        }
+      )
+        .populate(
+          "assignedTo",
+          "name email role"
+        )
+        .populate(
+          "createdBy",
+          "name email role"
+        );
+
+    /* =========================================
+       RESPONSE
+    ========================================= */
 
     return res.status(200).json({
       success: true,
-      message: "Task updated successfully",
+
+      message:
+        "Task updated successfully",
+
       data: {
         task: updatedTask,
       },
@@ -400,33 +681,60 @@ const updateTask = async (req, res) => {
   }
 };
 
-// DELETE TASK
+/* =========================================================
+   DELETE TASK
+========================================================= */
+
 const deleteTask = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate MongoDB ObjectId
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      throw new AppError("Invalid task ID", 400);
+    /* =========================================
+       VALIDATE TASK ID
+    ========================================= */
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      throw new AppError(
+        "Invalid task ID",
+        400
+      );
     }
 
-    const task = await Task.findById(id);
+    /* =========================================
+       FIND TASK
+    ========================================= */
+
+    const task =
+      await Task.findById(id);
 
     if (!task) {
-      throw new AppError("Task not found", 404);
+      throw new AppError(
+        "Task not found",
+        404
+      );
     }
 
-    // =================================================
-    // AUTHORIZATION
-    // =================================================
+    /* =========================================
+       AUTHORIZATION
+    ========================================= */
 
-    const isAdmin = req.user.role === "admin";
+    const isAdmin =
+      req.user.role === "admin";
+
+    const currentUserId =
+      getCurrentUserId(req);
 
     const isTaskOwner =
-      task.assignedTo.toString() === req.user.userId.toString();
+      task.assignedTo &&
+      String(task.assignedTo) ===
+        String(currentUserId);
 
-    // Admin can delete any task.
-    // User can delete only their assigned task.
+    /* =========================================
+       ADMIN OR TASK OWNER
+    ========================================= */
+
     if (!isAdmin && !isTaskOwner) {
       throw new AppError(
         "You are not authorized to delete this task",
@@ -434,28 +742,78 @@ const deleteTask = async (req, res) => {
       );
     }
 
+    /* =========================================
+       DELETE
+    ========================================= */
+
     await Task.findByIdAndDelete(id);
+
+    /* =========================================
+       RESPONSE
+    ========================================= */
 
     return res.status(200).json({
       success: true,
-      message: "Task deleted successfully",
+
+      message:
+        "Task deleted successfully",
     });
   } catch (error) {
     throw error;
   }
 };
 
-// GET TASK STATISTICS
+/* =========================================================
+   GET TASK STATISTICS
+========================================================= */
+
 const getTaskStats = async (req, res) => {
   try {
     const now = new Date();
 
-    const baseQuery =
-      req.user.role === "admin"
-        ? {}
-        : {
-            assignedTo: req.user.userId,
-          };
+    /* =========================================
+       CURRENT USER
+    ========================================= */
+
+    const currentUserId =
+      getCurrentUserId(req);
+
+    /* =========================================
+       BASE QUERY
+
+       ADMIN:
+       → All tasks
+
+       USER:
+       → Only assigned tasks
+    ========================================= */
+
+    let baseQuery = {};
+
+    if (req.user.role !== "admin") {
+      if (
+        !currentUserId ||
+        !mongoose.Types.ObjectId.isValid(
+          currentUserId
+        )
+      ) {
+        throw new AppError(
+          "Invalid user ID",
+          401
+        );
+      }
+
+      baseQuery = {
+        assignedTo:
+          new mongoose.Types.ObjectId(
+            currentUserId
+          ),
+      };
+    }
+
+    /* =========================================
+       STATISTICS
+    ========================================= */
 
     const [
       totalTasks,
@@ -464,37 +822,67 @@ const getTaskStats = async (req, res) => {
       completedTasks,
       overdueTasks,
     ] = await Promise.all([
-      Task.countDocuments(baseQuery),
+      /* TOTAL */
+
+      Task.countDocuments(
+        baseQuery
+      ),
+
+      /* PENDING */
 
       Task.countDocuments({
         ...baseQuery,
+
         status: "pending",
       }),
 
+      /* IN PROGRESS */
+
       Task.countDocuments({
         ...baseQuery,
+
         status: "in_progress",
       }),
 
+      /* COMPLETED */
+
       Task.countDocuments({
         ...baseQuery,
+
         status: "completed",
       }),
 
+      /* OVERDUE */
+
       Task.countDocuments({
         ...baseQuery,
-        dueDate: { $lt: now },
-        status: { $ne: "completed" },
+
+        dueDate: {
+          $lt: now,
+        },
+
+        status: {
+          $ne: "completed",
+        },
       }),
     ]);
 
+    /* =========================================
+       RESPONSE
+    ========================================= */
+
     return res.status(200).json({
       success: true,
+
       data: {
         totalTasks,
+
         pendingTasks,
+
         inProgressTasks,
+
         completedTasks,
+
         overdueTasks,
       },
     });
@@ -502,6 +890,10 @@ const getTaskStats = async (req, res) => {
     throw error;
   }
 };
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 module.exports = {
   createTask,
